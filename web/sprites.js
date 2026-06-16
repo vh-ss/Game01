@@ -57,17 +57,19 @@
     return c;
   }
 
-  function player() {
+  // step: 0 idle, 1/2 walk cycle (legs alternate)
+  function player(step) {
     const [c, x] = make(24, 32);
+    const ll = step === 1 ? 2 : 0, rl = step === 2 ? 2 : 0;
     shadow(x, 12, 30, 8, 3);
-    x.fillStyle = '#2f3a55'; x.fillRect(7, 22, 4, 8); x.fillRect(13, 22, 4, 8);
-    x.fillStyle = '#1c2233'; x.fillRect(6, 29, 6, 2); x.fillRect(12, 29, 6, 2);
-    x.fillStyle = '#3f6fc4'; x.fillRect(5, 13, 14, 11);                 // bright blue denim jacket
+    x.fillStyle = '#2f3a55'; x.fillRect(7, 22, 4, 8 - ll); x.fillRect(13, 22, 4, 8 - rl);
+    x.fillStyle = '#1c2233'; x.fillRect(6, 29 - ll, 6, 2); x.fillRect(12, 29 - rl, 6, 2);
+    x.fillStyle = '#3f6fc4'; x.fillRect(5, 13, 14, 11);                 // denim jacket
     x.fillStyle = '#5a86d8'; x.fillRect(6, 14, 12, 4);
     x.fillStyle = '#e23b4e'; x.fillRect(5, 13, 14, 2);
     x.fillStyle = '#2e539a'; x.fillRect(11, 14, 2, 10);
-    x.fillStyle = '#3f6fc4'; x.fillRect(3, 14, 3, 8); x.fillRect(18, 14, 3, 8);
-    x.fillStyle = P.skin; x.fillRect(3, 21, 3, 2); x.fillRect(18, 21, 3, 2);
+    x.fillStyle = '#3f6fc4'; x.fillRect(3, 14 + ll, 3, 8); x.fillRect(18, 14 + rl, 3, 8);   // arms swing
+    x.fillStyle = P.skin; x.fillRect(3, 21 + ll, 3, 2); x.fillRect(18, 21 + rl, 3, 2);
     x.fillStyle = P.skin; x.fillRect(8, 5, 8, 8); x.fillStyle = P.skinSh; x.fillRect(8, 11, 8, 2);
     x.fillStyle = '#222'; x.fillRect(9, 8, 2, 2); x.fillRect(13, 8, 2, 2);
     x.fillStyle = '#e23b4e'; x.fillRect(11, 0, 2, 6); x.fillRect(9, 2, 2, 4); x.fillRect(13, 2, 2, 4); x.fillRect(7, 3, 2, 3); x.fillRect(15, 3, 2, 3);
@@ -75,19 +77,20 @@
     return c;
   }
 
-  // friendly cartoon zombie — round, goofy, not scary
-  function enemy() {
+  // friendly cartoon zombie — round, goofy; arms/legs wobble per step
+  function enemy(step) {
     const [c, x] = make(24, 32);
+    const la = step === 1 ? 1 : 0, ra = step === 2 ? 1 : 0;
     shadow(x, 12, 30, 8, 3);
-    x.fillStyle = '#6a8f3a'; x.fillRect(7, 22, 4, 8); x.fillRect(13, 23, 4, 7);
+    x.fillStyle = '#6a8f3a'; x.fillRect(7, 22, 4, 8 - la); x.fillRect(13, 23, 4, 7 - ra);
     x.fillStyle = '#7fae4a'; x.fillRect(5, 12, 14, 12);
-    x.fillStyle = '#6e9a3f'; x.fillRect(6, 18, 4, 4); x.fillRect(13, 16, 4, 4);   // patches
-    x.fillStyle = '#8ec257'; x.fillRect(2, 13, 3, 9); x.fillRect(19, 13, 3, 9);   // arms out
-    x.fillStyle = '#8ec257'; x.fillRect(7, 4, 10, 9);                              // big round head
+    x.fillStyle = '#6e9a3f'; x.fillRect(6, 18, 4, 4); x.fillRect(13, 16, 4, 4);
+    x.fillStyle = '#8ec257'; x.fillRect(2, 13 + la, 3, 9); x.fillRect(19, 13 + ra, 3, 9);   // arms out, swinging
+    x.fillStyle = '#8ec257'; x.fillRect(7, 4, 10, 9);
     x.fillStyle = '#7fae4a'; x.fillRect(7, 11, 10, 2);
-    x.fillStyle = '#fff'; x.fillRect(9, 7, 3, 3); x.fillRect(13, 7, 3, 3);         // googly eyes
+    x.fillStyle = '#fff'; x.fillRect(9, 7, 3, 3); x.fillRect(13, 7, 3, 3);
     x.fillStyle = '#222'; x.fillRect(10, 8, 2, 2); x.fillRect(14, 8, 1, 2);
-    x.fillStyle = '#3a5a22'; x.fillRect(9, 11, 6, 1);                              // simple smile
+    x.fillStyle = '#3a5a22'; x.fillRect(9, 11, 6, 1);
     x.fillStyle = '#fff'; x.fillRect(10, 11, 1, 1); x.fillRect(13, 11, 1, 1);
     return c;
   }
@@ -97,7 +100,7 @@
     shadow(x, 0, 9, 8, 3);
     x.fillStyle = '#e0a72a'; x.beginPath(); x.arc(0, 0, 9, 0, 7); x.fill();
     x.fillStyle = '#ffd23f'; x.beginPath(); x.arc(0, 0, 7, 0, 7); x.fill();
-    x.fillStyle = '#e0a72a'; x.font = 'bold 12px monospace'; x.textAlign = 'center'; x.textBaseline = 'middle'; x.fillText('★', 0, 1);
+    x.fillStyle = '#e0a72a'; x.font = 'bold 13px monospace'; x.textAlign = 'center'; x.textBaseline = 'middle'; x.fillText('$', 0, 1);
     x.fillStyle = 'rgba(255,255,255,0.85)'; x.beginPath(); x.arc(-3, -3, 2, 0, 7); x.fill();
     return c;
   }
@@ -140,7 +143,9 @@
   }
 
   window.SPRITES = {
-    ammo: ammo(), tilemap: tilemap(), player: player(), enemy: enemy(), coin: coin(), home: home(),
+    ammo: ammo(), tilemap: tilemap(),
+    player: [player(0), player(1), player(2)], enemy: [enemy(0), enemy(1), enemy(2)],
+    coin: coin(), home: home(),
     house1: building('#ff9aa2', '#e87f88', '#d65a6a', '#b8485a', 96, 96),
     house2: building('#9ad0ff', '#7fb6e8', '#4f8fd6', '#3f76b8', 96, 96),
     house3: building('#ffe08a', '#e8c66e', '#e0a72a', '#c2891f', 96, 96),
