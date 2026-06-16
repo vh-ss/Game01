@@ -132,7 +132,23 @@ const mouse = { x: VIEW_W / 2, y: VIEW_H / 2, down: false, moved: false };
 canvas.addEventListener('mousemove', e => { const r = canvas.getBoundingClientRect(); mouse.x = (e.clientX - r.left) * (canvas.width / r.width); mouse.y = (e.clientY - r.top) * (canvas.height / r.height); mouse.moved = true; });
 canvas.addEventListener('mousedown', () => { canvas.focus(); if (state === 'menu') { startGame(); return; } if (state === 'play') mouse.down = true; });
 
-function startGame() { state = 'play'; AUDIO.start(); AUDIO.startMusic(); }
+function startGame() { state = 'play'; AUDIO.start(); AUDIO.startMusic(); tryFullscreen(); }
+const isMobile = () => matchMedia('(pointer:coarse)').matches || innerWidth < 820;
+function fitCanvas() {
+  if (!isMobile()) { canvas.style.width = ''; canvas.style.height = ''; return; }
+  const ar = VIEW_W / VIEW_H; const w = innerWidth, h = innerHeight;
+  let cw, ch; if (w / h > ar) { ch = h; cw = h * ar; } else { cw = w; ch = w / ar; }
+  canvas.style.width = Math.round(cw) + 'px'; canvas.style.height = Math.round(ch) + 'px';
+}
+function tryFullscreen() {
+  if (!isMobile()) return;
+  const el = document.documentElement, req = el.requestFullscreen || el.webkitRequestFullscreen;
+  if (req) { try { req.call(el); } catch (e) {} }
+  setTimeout(fitCanvas, 300);
+}
+addEventListener('resize', fitCanvas);
+addEventListener('orientationchange', () => setTimeout(fitCanvas, 250));
+fitCanvas();
 
 // ---- touch controls (mobile): left = move stick, right = aim/fire stick ----
 const IS_TOUCH = ('ontouchstart' in window) || navigator.maxTouchPoints > 0;
