@@ -1,0 +1,11 @@
+# OS junk
+Thumbs.db
+desktop.ini
+.DS_Store
+
+# editor
+.vscode/
+*.swp
+
+# temp build/preview artifacts
+_*.png

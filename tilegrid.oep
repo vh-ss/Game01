@@ -1,0 +1,28 @@
+	<project>
+	<name>Kenny game map</name>
+	<settings>
+	<defaultWidth>1408</defaultWidth>
+	<defaultHeight>1088</defaultHeight>
+	</settings>
+
+	<tilesets>
+		<tileset name="tiles" image="assets/graphics/tilemap.png" tileHeight="32" tileWidth="32" />
+	</tilesets>
+	
+	
+	
+	<objects>
+		<object name="playerStart" image="assets/graphics/player_start.png" height="32" width="32" limit="1" />
+		<object name="zombieStart" image="assets/graphics/zombie_start.png" height="32" width="32" />
+		<object name="home" image="assets/graphics/sweethome.png" height="64" width="96" limit="1" />
+		<object name="house" image="assets/graphics/place_house.png" height="96" width="96" />
+		<object name="coins" image="assets/graphics/place_coins.png" height="32" width="32" />
+		
+	</objects>
+	
+	<layers>
+		<tiles name="OurTiles" gridSize="32"/>
+		<objects name="Objects" gridSize="32"/>
+	</layers>
+	
+	</project>
