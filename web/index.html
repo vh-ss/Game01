@@ -3,38 +3,38 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>OUTBREAK</title>
+<title>Punk Town</title>
 <style>
   html, body {
     margin: 0; height: 100%;
-    background: radial-gradient(circle at 50% 40%, #14110f 0%, #060605 80%);
+    background: linear-gradient(160deg, #aee6ff 0%, #cdeeb0 100%);
     display: flex; flex-direction: column;
     align-items: center; justify-content: center;
-    font-family: 'Courier New', Calibri, monospace; color: #8a8275;
+    font-family: Calibri, system-ui, sans-serif; color: #4a5a38;
   }
   h1 {
-    margin: 0 0 10px; font-weight: 700; letter-spacing: 8px; font-size: 34px;
-    color: #9a2b2b; text-shadow: 0 0 14px rgba(120,20,20,0.7), 2px 2px 0 #000;
+    margin: 0 0 10px; font-weight: 800; letter-spacing: 3px; font-size: 32px;
+    color: #3f8f3a; text-shadow: 2px 2px 0 #fff, 3px 3px 0 rgba(0,0,0,0.12);
   }
   canvas {
-    background: #000;
+    background: #6cbf4a;
     image-rendering: pixelated;
-    box-shadow: 0 0 60px rgba(80,10,10,0.35), 0 0 0 1px #1a1714;
+    border-radius: 6px;
+    box-shadow: 0 10px 30px rgba(60,120,40,0.35), 0 0 0 3px #fff;
   }
-  p { margin: 12px 0 0; font-size: 13px; color: #6a6358; max-width: 760px; text-align: center; }
-  b { color: #9a9080; }
+  p { margin: 12px 0 0; font-size: 13px; color: #5a6a48; max-width: 760px; text-align: center; }
+  b { color: #3f7a2f; }
   kbd {
-    background:#1c1a17;border:1px solid #3a342b;border-radius:3px;
-    padding:1px 6px;font-family:inherit;color:#b0a690;
+    background:#fff;border:1px solid #b9d9a0;border-radius:4px;
+    padding:1px 6px;font-family:inherit;color:#4a5a38;box-shadow:0 1px 0 #cfe3bc;
   }
 </style>
 </head>
 <body>
-  <h1>OUTBREAK</h1>
+  <h1>☀ PUNK TOWN</h1>
   <canvas id="game" width="760" height="600"></canvas>
-  <p><kbd>←</kbd> <kbd>→</kbd> / <kbd>A</kbd> <kbd>D</kbd> бігти &nbsp;·&nbsp; <kbd>Space</kbd>/<kbd>W</kbd>/<kbd>↑</kbd> стрибок &nbsp;·&nbsp; <kbd>Shift</kbd> прискорення &nbsp;·&nbsp;
-     <kbd>click</kbd> / <kbd>F</kbd> стрілянина &nbsp;·&nbsp; <kbd>1</kbd>–<kbd>4</kbd> зброя<br>
-     Дістанься <b>зеленого виходу ▶</b> праворуч. Стрибай ями, відстрілюй зомбі, збирай зброю та аптечки. Падіння в яму = смерть.</p>
+  <p><kbd>↑↓←→</kbd> / <kbd>WASD</kbd> рух &nbsp;·&nbsp; <kbd>Shift</kbd> прискорення &nbsp;·&nbsp; <kbd>click</kbd> / <kbd>F</kbd> стрілянина &nbsp;·&nbsp; <kbd>1</kbd>–<kbd>4</kbd> зброя<br>
+     Збери <b>15 монет ★</b> для перемоги. Відстрілюй зомбі (випадає зброя), хапай <b>ящики набоїв</b>, повертайся <b>ДОДОМУ</b> щоб полікуватись.</p>
   <script src="level.js"></script>
   <script src="sprites.js"></script>
   <script src="game.js"></script>
