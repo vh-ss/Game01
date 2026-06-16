@@ -138,10 +138,18 @@ function startGame() { state = 'play'; AUDIO.start(); AUDIO.startMusic(); }
 const IS_TOUCH = ('ontouchstart' in window) || navigator.maxTouchPoints > 0;
 const STICK_R = 52;
 const tMove = { id: null, ox: 0, oy: 0, x: 0, y: 0, active: false, mx: 0, my: 0 };
-const tAim = { id: null, ox: 0, oy: 0, x: 0, y: 0, active: false, dx: 1, dy: 0, fire: false };
+const tFire = { id: null, active: false };
+const fireBtn = { x: VIEW_W - 86, y: VIEW_H - 86, r: 54 };   // big round fire button (bottom-right)
 const btnPause = { x: VIEW_W - 50, y: 46, w: 40, h: 32, label: '⏸' };
 const btnWeapon = { x: VIEW_W / 2 - 28, y: VIEW_H - 54, w: 56, h: 46 };
 const inBtn = (b, x, y) => x >= b.x && x <= b.x + b.w && y >= b.y && y <= b.y + b.h;
+const inFire = (x, y) => Math.hypot(x - fireBtn.x, y - fireBtn.y) <= fireBtn.r + 12;
+function autoAim() {
+  const px = player.x + player.w / 2, py = player.y + player.h / 2; let best = null, bd = 520 * 520;
+  for (const z of zombies) { const dx = z.x + z.w / 2 - px, dy = z.y + z.h / 2 - py, d = dx * dx + dy * dy; if (d < bd) { bd = d; best = [dx, dy]; } }
+  if (best) { const m = Math.hypot(best[0], best[1]) || 1; return { x: best[0] / m, y: best[1] / m }; }
+  return { x: face.x, y: face.y };
+}
 function canvasXY(t) { const r = canvas.getBoundingClientRect(); return [(t.clientX - r.left) * (canvas.width / r.width), (t.clientY - r.top) * (canvas.height / r.height)]; }
 function cycleWeapon() { for (let k = 1; k <= WEAPONS.length; k++) { const ni = (curW + k) % WEAPONS.length; if (owned[ni]) { curW = ni; break; } } }
 
@@ -154,8 +162,8 @@ canvas.addEventListener('touchstart', e => {
     if (inBtn(btnPause, x, y)) { if (state === 'play') { state = 'paused'; AUDIO.stopMusic(); } else if (state === 'paused') { state = 'play'; AUDIO.startMusic(); } continue; }
     if (state !== 'play') continue;
     if (inBtn(btnWeapon, x, y)) { cycleWeapon(); continue; }
-    if (x < canvas.width / 2 && tMove.id === null) { tMove.id = t.identifier; tMove.ox = tMove.x = x; tMove.oy = tMove.y = y; tMove.active = true; tMove.mx = tMove.my = 0; }
-    else if (tAim.id === null) { tAim.id = t.identifier; tAim.ox = tAim.x = x; tAim.oy = tAim.y = y; tAim.active = true; tAim.fire = false; }
+    if (inFire(x, y) && tFire.id === null) { tFire.id = t.identifier; tFire.active = true; }
+    else if (x < canvas.width / 2 && tMove.id === null) { tMove.id = t.identifier; tMove.ox = tMove.x = x; tMove.oy = tMove.y = y; tMove.active = true; tMove.mx = tMove.my = 0; }
   }
 }, { passive: false });
 canvas.addEventListener('touchmove', e => {
@@ -163,14 +171,13 @@ canvas.addEventListener('touchmove', e => {
   for (const t of e.changedTouches) {
     const [x, y] = canvasXY(t);
     if (t.identifier === tMove.id) { const dx = x - tMove.ox, dy = y - tMove.oy, m = Math.hypot(dx, dy) || 1, cl = Math.min(m, STICK_R); tMove.mx = dx / m * (cl / STICK_R); tMove.my = dy / m * (cl / STICK_R); tMove.x = tMove.ox + dx / m * cl; tMove.y = tMove.oy + dy / m * cl; }
-    else if (t.identifier === tAim.id) { const dx = x - tAim.ox, dy = y - tAim.oy, m = Math.hypot(dx, dy); tAim.x = x; tAim.y = y; if (m > 12) { tAim.dx = dx / m; tAim.dy = dy / m; tAim.fire = true; } else tAim.fire = false; }
   }
 }, { passive: false });
 function endTouch(e) {
   e.preventDefault();
   for (const t of e.changedTouches) {
     if (t.identifier === tMove.id) { tMove.id = null; tMove.active = false; tMove.mx = tMove.my = 0; }
-    else if (t.identifier === tAim.id) { tAim.id = null; tAim.active = false; tAim.fire = false; }
+    else if (t.identifier === tFire.id) { tFire.id = null; tFire.active = false; }
   }
 }
 canvas.addEventListener('touchend', endTouch, { passive: false });
@@ -238,10 +245,11 @@ function update(dt) {
   // shooting
   fireCD -= dt;
   for (let i = 0; i < WEAPONS.length; i++) if (keys['Digit' + (i + 1)] && owned[i]) curW = i;
-  if (tAim.fire) { face.x = tAim.dx; face.y = tAim.dy; }   // gun tracks the aim stick
+  let aim = null;
+  if (tFire.active) { aim = autoAim(); face.x = aim.x; face.y = aim.y; }   // gun auto-aims while the fire button is held
   if (fireCD <= 0 && wAmmo[curW] > 0) {
     if (mouse.down) { fire(mouse.x + cam.x - (player.x + player.w / 2), mouse.y + cam.y - (player.y + player.h / 2)); fireCD = WEAPONS[curW].rate; }
-    else if (tAim.fire) { fire(tAim.dx, tAim.dy); fireCD = WEAPONS[curW].rate; }
+    else if (tFire.active) { fire(aim.x, aim.y); fireCD = WEAPONS[curW].rate; }
     else if (keys.KeyF) { fire(face.x, face.y); fireCD = WEAPONS[curW].rate; }
   }
 
@@ -404,15 +412,14 @@ function drawTouchUI() {
     ctx.beginPath(); ctx.arc(tMove.ox, tMove.oy, STICK_R, 0, 7); ctx.stroke();
     ctx.fillStyle = 'rgba(255,255,255,0.35)'; ctx.beginPath(); ctx.arc(tMove.x, tMove.y, 24, 0, 7); ctx.fill();
   }
-  // aim/fire stick (right)
-  if (tAim.active) {
-    ctx.strokeStyle = 'rgba(255,120,80,0.55)'; ctx.lineWidth = 3;
-    ctx.beginPath(); ctx.arc(tAim.ox, tAim.oy, STICK_R, 0, 7); ctx.stroke();
-    ctx.fillStyle = 'rgba(255,120,80,0.4)'; ctx.beginPath(); ctx.arc(tAim.x, tAim.y, 24, 0, 7); ctx.fill();
-  }
-  // hint circles when idle
+  // move-stick hint when idle
   if (!tMove.active) { ctx.strokeStyle = 'rgba(255,255,255,0.18)'; ctx.lineWidth = 2; ctx.beginPath(); ctx.arc(90, VIEW_H - 90, STICK_R, 0, 7); ctx.stroke(); ctx.fillStyle = 'rgba(255,255,255,0.25)'; ctx.font = '12px Calibri'; ctx.textAlign = 'center'; ctx.fillText('РУХ', 90, VIEW_H - 90); }
-  if (!tAim.active) { ctx.strokeStyle = 'rgba(255,120,80,0.2)'; ctx.lineWidth = 2; ctx.beginPath(); ctx.arc(VIEW_W - 90, VIEW_H - 90, STICK_R, 0, 7); ctx.stroke(); ctx.fillStyle = 'rgba(255,160,120,0.3)'; ctx.font = '12px Calibri'; ctx.textAlign = 'center'; ctx.fillText('ВОГОНЬ', VIEW_W - 90, VIEW_H - 90); }
+  // FIRE button (right) — pressed state highlights
+  ctx.beginPath(); ctx.arc(fireBtn.x, fireBtn.y, fireBtn.r, 0, 7);
+  ctx.fillStyle = tFire.active ? 'rgba(255,90,60,0.55)' : 'rgba(255,90,60,0.28)'; ctx.fill();
+  ctx.strokeStyle = 'rgba(255,140,110,0.8)'; ctx.lineWidth = 3; ctx.stroke();
+  ctx.fillStyle = '#fff'; ctx.font = 'bold 16px Calibri'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+  ctx.fillText('ВОГОНЬ', fireBtn.x, fireBtn.y); ctx.textBaseline = 'alphabetic';
   // weapon button
   ctx.fillStyle = 'rgba(0,0,0,0.35)'; rr(btnWeapon.x, btnWeapon.y, btnWeapon.w, btnWeapon.h, 8); ctx.fill();
   ctx.strokeStyle = WEAPONS[curW].color; ctx.lineWidth = 2; rr(btnWeapon.x, btnWeapon.y, btnWeapon.w, btnWeapon.h, 8); ctx.stroke();
