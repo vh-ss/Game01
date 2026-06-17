@@ -220,6 +220,23 @@ function updateAllies(dt) {
   }
 }
 
+// barricades — build a wall in front of you for coins; zombies bash it down
+const barricades = []; const BARR_COST = 3;
+function buildBarricade() {
+  if (driving) return;
+  const c = Math.floor((player.x + 9 + face.x * TS) / TS), r = Math.floor((player.y + 11 + face.y * TS) / TS);
+  if (c < 1 || r < 1 || c >= COLS - 1 || r >= ROWS - 1) return;
+  if (solid[r][c] || barricades.some(b => b.c === c && b.r === r)) { showToast('Тут не можна'); return; }
+  if (totalCoins < BARR_COST) { showToast('Замало монет (' + BARR_COST + ')'); AUDIO.sfx.hurt(); return; }
+  totalCoins -= BARR_COST; solid[r][c] = true; barricades.push({ c, r, hp: 60, maxhp: 60 }); AUDIO.sfx.pickup(); showToast('🧱 Барикаду поставлено');
+}
+function updateBarricades(dt) {
+  for (let i = barricades.length - 1; i >= 0; i--) {
+    const b = barricades[i], bx = b.c * TS + 16, by = b.r * TS + 16;
+    for (const z of zombies) { if (z.dead || z.hidden) continue; if (Math.abs(z.x + z.w / 2 - bx) < 28 && Math.abs(z.y + z.h / 2 - by) < 28) b.hp -= dt * 14; }
+    if (b.hp <= 0) { solid[b.r][b.c] = false; spawnBurst(bx, by, '#7a5a30', 16, 150, 3); barricades.splice(i, 1); }
+  }
+}
 function checkQuests() {
   let all = true;
   for (const q of quests) {
@@ -253,6 +270,7 @@ addEventListener('keydown', e => {
   if (state === 'title' && (e.code === 'Space' || e.code === 'Enter')) startGame();
   else if ((state === 'win' || state === 'gameover') && e.code === 'KeyR') location.reload();
   else if (e.code === 'KeyE' && state === 'play') { if (driving) exitCar(); else if (nearVehicle) enterCar(nearVehicle); }
+  else if (e.code === 'KeyC' && state === 'play') buildBarricade();
   else if (e.code === 'KeyB' && state === 'play' && nearHome) { state = 'shop'; }
   else if ((e.code === 'KeyB' || e.code === 'Escape') && state === 'shop') { state = 'play'; }
   else if (e.code === 'Escape' && state === 'play') { state = 'paused'; AUDIO.stopMusic(); }
@@ -294,6 +312,7 @@ const fireBtn = { r: 54, get x() { return VIEW_W - 86; }, get y() { return VIEW_
 const btnPause = { y: 48, w: 40, h: 32, get x() { return VIEW_W - 50; } };
 const btnShop = { x: 10, y: 100, w: 120, h: 34 };   // appears near home on mobile
 const btnCar = { x: 10, y: 140, w: 130, h: 34 };    // appears near a car / when driving
+const btnBuild = { x: 10, y: 180, w: 130, h: 34 };  // build barricade (mobile)
 const inBtn = (b, x, y) => x >= b.x && x <= b.x + b.w && y >= b.y && y <= b.y + b.h;
 const inFire = (x, y) => Math.hypot(x - fireBtn.x, y - fireBtn.y) <= fireBtn.r + 12;
 // weapon selector bar (bottom-centre) — tap/click an icon to equip
@@ -320,6 +339,7 @@ canvas.addEventListener('touchstart', e => {
     if (state !== 'play') continue;
     if (nearHome && inBtn(btnShop, x, y)) { state = 'shop'; continue; }
     if ((nearVehicle || driving) && inBtn(btnCar, x, y)) { if (driving) exitCar(); else enterCar(nearVehicle); continue; }
+    if (!driving && inBtn(btnBuild, x, y)) { buildBarricade(); continue; }
     if (inQuestPanel(x, y)) { questsCollapsed = !questsCollapsed; continue; }
     { const wi = weaponSlotAt(x, y); if (wi >= 0) { if (owned[wi]) curW = wi; continue; } }
     if (inFire(x, y) && tFire.id === null) { tFire.id = t.identifier; tFire.active = true; }
@@ -634,7 +654,7 @@ function update(dt) {
   hurtFlash = Math.max(0, hurtFlash - dt * 1.5); shakeT = Math.max(0, shakeT - dt); invuln = Math.max(0, invuln - dt); toastT = Math.max(0, toastT - dt); swingFx = Math.max(0, swingFx - dt); speechT = Math.max(0, speechT - dt);
   comboT = Math.max(0, comboT - dt); if (comboT <= 0) combo = 0;
   for (let i = particles.length - 1; i >= 0; i--) { const p = particles[i]; p.vy += (p.grav || 0) * dt; p.x += p.vx * dt; p.y += p.vy * dt; p.life -= dt; if (p.life <= 0) particles.splice(i, 1); }
-  updateBurn(dt); updateAllies(dt);
+  updateBurn(dt); updateAllies(dt); updateBarricades(dt);
 
   checkQuests();
 
@@ -675,6 +695,13 @@ function drawCar(cx, cy, ang, col, sc) {
   ctx.fillStyle = '#9fd0e8'; rr(9, -8, 6, 16, 2); ctx.fill();
   ctx.fillStyle = '#ffe08a'; ctx.fillRect(20, -8, 3, 4); ctx.fillRect(20, 4, 3, 4);
   ctx.restore();
+}
+function drawBuildPrompt() {
+  ctx.fillStyle = 'rgba(20,40,28,.8)'; rr(btnBuild.x, btnBuild.y, btnBuild.w, btnBuild.h, 10); ctx.fill();
+  ctx.strokeStyle = '#caa15a'; ctx.lineWidth = 2; rr(btnBuild.x, btnBuild.y, btnBuild.w, btnBuild.h, 10); ctx.stroke();
+  ctx.fillStyle = '#e8d2a0'; ctx.font = 'bold 14px Trebuchet MS,sans-serif'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+  ctx.fillText('🧱 Барикада 💲' + BARR_COST, btnBuild.x + btnBuild.w / 2, btnBuild.y + btnBuild.h / 2);
+  ctx.textAlign = 'left'; ctx.textBaseline = 'alphabetic';
 }
 function drawCarPrompt() {
   ctx.fillStyle = 'rgba(20,40,28,.85)'; rr(btnCar.x, btnCar.y, btnCar.w, btnCar.h, 10); ctx.fill();
@@ -745,6 +772,7 @@ function draw() {
 
   for (const cr of cars) { spr(IMG.car, cr.x, cr.y); if (cr.fire) burnLook(cr, Math.round(cr.x - cam.x), Math.round(cr.y - cam.y), 46, 28); }
   for (const v of vehicles) drawCar(v.x, v.y, 0, v.col, 1);
+  for (const b of barricades) { const x = b.c * TS - cam.x, y = b.r * TS - cam.y; if (x < -40 || x > VIEW_W + 40 || y < -40 || y > VIEW_H + 40) continue; ctx.fillStyle = '#5a4730'; ctx.fillRect(x + 2, y + 7, TS - 4, TS - 14); ctx.strokeStyle = '#3a2e1e'; ctx.lineWidth = 3; ctx.beginPath(); ctx.moveTo(x + 4, y + 8); ctx.lineTo(x + TS - 4, y + TS - 8); ctx.moveTo(x + TS - 4, y + 8); ctx.lineTo(x + 4, y + TS - 8); ctx.stroke(); ctx.fillStyle = 'rgba(40,20,10,' + (0.5 * (1 - b.hp / b.maxhp)).toFixed(2) + ')'; ctx.fillRect(x, y, TS, TS); }
   for (const b of bushes) drawBush(b);
   for (const h of houses) { spr(h.img, h.x, h.y); if (h.fire) burnLook(h, Math.round(h.x - cam.x), Math.round(h.y - cam.y), 96, 96); }
   for (const hm of homes) spr(IMG.home, hm.x, hm.y - 32);
@@ -866,6 +894,7 @@ function draw() {
   drawHUD(); drawQuests(); drawWeaponBar(); drawSpeech(); drawMinimap();
   if (state === 'play' && nearHome) drawShopPrompt();
   if (state === 'play' && (nearVehicle || driving)) drawCarPrompt();
+  if (state === 'play' && IS_TOUCH && !driving) drawBuildPrompt();
   if (state === 'shop') drawShop();
   if (IS_TOUCH && (state === 'play' || state === 'paused')) drawTouchUI();
   if (state === 'paused') drawPause();
