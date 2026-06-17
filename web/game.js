@@ -56,6 +56,7 @@ function mkZombie(x, y) {
     armed, zw: armed ? Math.floor(Math.random() * ZWEAPONS.length) : 0,
     shootCD: 0.6 + Math.random() * 2, hasBullet: false, aimx: 1, aimy: 0 };
 }
+function mkCrim(x, y) { return { x, y, w: 18, h: 22, vx: 0, vy: 0, t: 0, hp: 5, flash: 0, frame: 0, crim: true, carrying: 0, stealCD: 0 }; }
 let coins = LEVEL.coins.map(([x, y]) => ({ x, y }));
 const homes = LEVEL.homes.map(([x, y]) => ({ x, y }));
 const houseImgs = [IMG.house1, IMG.house2, IMG.house3];
@@ -76,6 +77,10 @@ for (const h of houses) {
   const c = Math.floor((h.x + 48) / TS), r = Math.floor((h.y + 84) / TS);
   if (r >= 0 && r < ROWS && c >= 0 && c < COLS && reachable(c, r) && ar() < 0.5) ammoCrates.push({ x: c * TS + 6, y: r * TS + 6, w: 20, h: 20 });
 }
+// wrecked cars (decoration) + extra coins stashed in houses & by cars
+const cars = LEVEL.cars || [];
+for (const h of houses) { const c = Math.floor((h.x + 48) / TS), r = Math.floor((h.y + 84) / TS); if (r >= 0 && r < ROWS && c >= 0 && c < COLS && reachable(c, r) && ar() < 0.55) coins.push({ x: c * TS + 16, y: r * TS + 16 }); }
+for (const cr of cars) { if (ar() < 0.6) coins.push({ x: cr[0] + 22, y: cr[1] + 12 }); }
 
 let health = 100, lives = 3, totalCoins = 0, kills = 0, state = 'menu', stamina = STAM_MAX, animClock = 0, respawnT = RESPAWN_EVERY;
 const reachCells = (LEVEL.reach || []).filter(([c, r]) => r >= 0 && r < ROWS && c >= 0 && c < COLS && !solid[r][c]);
@@ -106,6 +111,8 @@ function questSpot(minFromPlayer) {
   if (Math.random() < 0.5) quests.push({ type: 'coins', target: Math.min(coins.length, 10 + ri(8)), label: 'Монети' });
   else quests.push({ type: 'kills', target: 12 + ri(12), label: 'Зомбі' });
 })();
+// gangs of coin-stealing bandits, scattered across the town
+for (let gi = 0; gi < 4; gi++) { const s = questSpot(420); const n = 2 + ri(3); for (let k = 0; k < n; k++) zombies.push(mkCrim(s[0] + ri(70) - 35, s[1] + ri(70) - 35)); }
 function checkQuests() {
   let all = true;
   for (const q of quests) {
@@ -236,6 +243,11 @@ let swingFx = 0, swingAng = 0;
 function deathFx(z) {
   if (z.dead) return; z.dead = true;
   if (z.isBoss) { bossDead = true; shakeT = Math.max(shakeT, 0.4); spawnBurst(z.x + 15, z.y + 17, '#8ec257', 26, 220, 4); showToast('Боса повалено!'); }
+  else if (z.crim) {
+    spawnBurst(z.x + 9, z.y + 11, '#c0392b', 14, 160, 3);
+    for (let k = 0; k < (z.carrying || 0); k++) coins.push({ x: z.x + Math.random() * 22 - 11, y: z.y + Math.random() * 22 - 11 });   // drop stolen coins
+    if (z.carrying > 0) showToast('Монети повернуто! 💰');
+  }
   else spawnBurst(z.x + 9, z.y + 11, '#8ec257', 16, 170, 3);
   spawnBurst(z.x + 9, z.y + 11, '#ffffff', 6, 120, 2); dropLoot(z); kills++; AUDIO.sfx.zombie();
 }
@@ -322,13 +334,15 @@ function update(dt) {
   // zombie respawn (keeps the town populated)
   respawnT -= dt; if (respawnT <= 0) { respawnT = RESPAWN_EVERY; respawnZombie(); }
 
-  // zombies (roam + chase)
+  // zombies + bandits (roam + chase)
   for (const z of zombies) {
     z.flash = Math.max(0, z.flash - dt);
+    if (z.crim) z.stealCD = Math.max(0, z.stealCD - dt);
     z.frame = 1 + (Math.floor(animClock * 8 + z.x * 0.05) % 2);
     const zx = z.x + z.w / 2, zy = z.y + z.h / 2, px = player.x + player.w / 2, py = player.y + player.h / 2;
     const d = Math.hypot(px - zx, py - zy);
-    if (d < 220) { const m = d || 1; z.vx = (px - zx) / m * ZCHASE; z.vy = (py - zy) / m * ZCHASE; }
+    const chaseR = z.crim ? 300 : 220, spd = z.crim ? ZCHASE * 1.15 : ZCHASE;   // bandits are a bit faster
+    if (d < chaseR) { const m = d || 1; z.vx = (px - zx) / m * spd; z.vy = (py - zy) / m * spd; }
     else { z.t -= dt; if (z.t <= 0) pickDir(z); }
     tryMove(z, z.vx * dt, z.vy * dt);
     // armed zombies fire single shots at the player (max 1 bullet each in flight)
@@ -340,7 +354,10 @@ function update(dt) {
         z.hasBullet = true; z.shootCD = w.cd; AUDIO.sfx.eshoot(z.zw);
       }
     }
-    if (aabb(player.x, player.y, player.w, player.h, z.x, z.y, z.w, z.h)) hurt(16);
+    if (aabb(player.x, player.y, player.w, player.h, z.x, z.y, z.w, z.h)) {
+      if (z.crim) { if (z.stealCD <= 0) { if (totalCoins > 0) { totalCoins--; z.carrying++; showToast('Бандит вкрав монету! 💰'); } hurt(8); z.stealCD = 1.0; } }
+      else hurt(16);
+    }
   }
 
   // enemy bullets
@@ -409,6 +426,7 @@ function draw() {
   const r0 = Math.max(0, Math.floor(cam.y / TS)), r1 = Math.min(ROWS - 1, Math.floor((cam.y + VIEW_H) / TS));
   for (let r = r0; r <= r1; r++) for (let c = c0; c <= c1; c++) ctx.drawImage(IMG.tilemap, tileIdx[r][c] * TS, 0, TS, TS, Math.round(c * TS - cam.x), Math.round(r * TS - cam.y), TS, TS);
 
+  for (const cr of cars) spr(IMG.car, cr[0], cr[1]);
   for (const h of houses) spr(h.img, h.x, h.y);
   for (const hm of homes) spr(IMG.home, hm.x, hm.y - 32);
   for (const co of coins) spr(IMG.coin, co.x - 10, co.y - 10 + Math.sin(animClock * 3 + co.x) * 2);
@@ -453,9 +471,10 @@ function draw() {
       ctx.fillStyle = 'rgba(0,0,0,.6)'; ctx.fillRect(bxx, byy, bw, 5); ctx.fillStyle = '#ff4a3a'; ctx.fillRect(bxx, byy, bw * Math.max(0, z.hp) / z.maxhp, 5);
       ctx.fillStyle = '#fff'; ctx.font = 'bold 11px Calibri'; ctx.textAlign = 'center'; ctx.fillText('☠ ' + z.name, Math.round(z.x + 15 - cam.x), byy - 6); ctx.textAlign = 'left';
     } else {
-      spr(IMG.enemy[z.frame], z.x - 3, z.y - 8);
+      spr((z.crim ? IMG.bandit : IMG.enemy)[z.frame], z.x - 3, z.y - 8);
       if (z.flash > 0) { ctx.globalAlpha = z.flash / 0.12 * 0.7; ctx.fillStyle = '#fff'; ctx.fillRect(Math.round(z.x - 3 - cam.x), Math.round(z.y - 8 - cam.y), 24, 32); ctx.globalAlpha = 1; }
-      if (z.hp < ZHP) { const hx = Math.round(z.x - cam.x), hy = Math.round(z.y - 12 - cam.y); ctx.fillStyle = 'rgba(0,0,0,.5)'; ctx.fillRect(hx, hy, z.w, 3); ctx.fillStyle = '#6fd14a'; ctx.fillRect(hx, hy, z.w * z.hp / ZHP, 3); }
+      const mh = z.crim ? 5 : ZHP;
+      if (z.hp < mh) { const hx = Math.round(z.x - cam.x), hy = Math.round(z.y - 12 - cam.y); ctx.fillStyle = 'rgba(0,0,0,.5)'; ctx.fillRect(hx, hy, z.w, 3); ctx.fillStyle = z.crim ? '#e0518f' : '#6fd14a'; ctx.fillRect(hx, hy, z.w * Math.max(0, z.hp) / mh, 3); }
     }
     // armed zombies: little gun aimed at you + a coloured danger dot
     if (z.armed) {

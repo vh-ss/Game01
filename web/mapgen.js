@@ -63,12 +63,18 @@ function genWorld() {
     return out;
   }
   const zombies = place(38, 150, 360);
-  const coins = place(30, 160, 260);
+  const coins = place(40, 140, 240);
 
   const houses = []; let t = 0;
   while (houses.length < 16 && t++ < 1500) { const c = 2 + ri(W - 5), r = 2 + ri(H - 6); const wx = c * TS, wy = r * TS; if (g[r][c] === 0 && houses.every(h => Math.abs(h[0] - wx) > 120 || Math.abs(h[1] - wy) > 120)) houses.push([wx, wy]); }
 
+  // wrecked cars on the roads
+  const roadCells = reachCells.filter(([c, r]) => g[r][c] === 7);
+  for (let i = roadCells.length - 1; i > 0; i--) { const j = ri(i + 1);[roadCells[i], roadCells[j]] = [roadCells[j], roadCells[i]]; }
+  const cars = [];
+  for (const [c, r] of roadCells) { const wx = c * TS, wy = r * TS; if (Math.hypot(wx - player[0], wy - player[1]) < 200) continue; if (cars.every(cc => Math.abs(cc[0] - wx) > 120 || Math.abs(cc[1] - wy) > 120)) { cars.push([wx - 6, wy + 2]); if (cars.length >= 16) break; } }
+
   const tiles = []; for (let r = 0; r < H; r++) for (let c = 0; c < W; c++) if (g[r][c] !== 0) tiles.push([c * TS, r * TS, g[r][c]]);
   const reachList = []; for (let r = 0; r < H; r++) for (let c = 0; c < W; c++) if (reach[r][c]) reachList.push([c, r]);
-  return { width: W * TS, height: H * TS, tileSize: TS, tiles, houses, homes: [home], zombies, coins, playerStart: player, reach: reachList };
+  return { width: W * TS, height: H * TS, tileSize: TS, tiles, houses, cars, homes: [home], zombies, coins, playerStart: player, reach: reachList };
 }

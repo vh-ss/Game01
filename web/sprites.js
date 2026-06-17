@@ -176,6 +176,39 @@
     return c;
   }
 
+  // BANDIT (24×32) — robber who steals coins; cap + red mask
+  function bandit(step) {
+    const [c, x] = make(24, 32);
+    const ll = step === 1 ? 2 : 0, rl = step === 2 ? 2 : 0;
+    shadow(x, 12, 30, 8, 3);
+    x.fillStyle = '#2a2a30'; x.fillRect(8, 24, 3, 6 - ll); x.fillRect(13, 24, 3, 6 - rl);
+    x.fillStyle = '#141418'; x.fillRect(7, 29 - ll, 5, 2); x.fillRect(12, 29 - rl, 5, 2);
+    x.fillStyle = '#3a3f47'; x.fillRect(5, 13, 14, 12);                         // grey hoodie
+    x.fillStyle = '#2c3037'; x.fillRect(6, 18, 12, 6);
+    x.fillStyle = '#b8322a'; x.fillRect(5, 13, 14, 2);                          // red trim
+    x.fillStyle = '#3a3f47'; x.fillRect(3, 15 + ll, 3, 7); x.fillRect(18, 15 + rl, 3, 7);
+    x.fillStyle = '#e8b489'; x.fillRect(3, 21 + ll, 3, 2); x.fillRect(18, 21 + rl, 3, 2);
+    x.fillStyle = '#e8b489'; x.fillRect(8, 6, 8, 7);                            // face
+    x.fillStyle = '#b8322a'; x.fillRect(8, 9, 8, 3);                            // red bandana mask
+    x.fillStyle = '#1a1a1a'; x.fillRect(9, 7, 2, 2); x.fillRect(13, 7, 2, 2);   // eyes
+    x.fillStyle = '#141418'; x.fillRect(7, 3, 10, 3); x.fillStyle = '#0e0e12'; x.fillRect(14, 4, 5, 2);  // cap + brim
+    return c;
+  }
+  // wrecked CAR (46×28) — abandoned, rusty
+  function car() {
+    const [c, x] = make(46, 28);
+    shadow(x, 23, 25, 21, 3);
+    x.fillStyle = '#15151a'; x.fillRect(7, 3, 9, 4); x.fillRect(7, 21, 9, 4); x.fillRect(30, 3, 9, 4); x.fillRect(30, 21, 9, 4); // wheels
+    x.fillStyle = '#6e4436'; x.fillRect(4, 6, 38, 16);                          // rusty body
+    x.fillStyle = '#85594a'; x.fillRect(5, 7, 36, 13);
+    x.fillStyle = '#5a3327'; for (let i = 0; i < 10; i++) x.fillRect(5 + ri(34), 7 + ri(13), 3, 2); // rust
+    x.fillStyle = '#2f3e47'; x.fillRect(14, 8, 18, 12);                         // cabin
+    x.fillStyle = '#1a262d'; x.fillRect(15, 9, 7, 10); x.fillRect(24, 9, 7, 10);
+    x.fillStyle = '#9aa'; x.fillRect(15, 9, 7, 1);                               // glass glint
+    x.fillStyle = '#caa'; x.globalAlpha = 0.4; x.fillRect(4, 12, 2, 4); x.globalAlpha = 1; // broken headlight
+    return c;
+  }
+
   // weapon icons (28×28, transparent) for HUD + mobile selector
   function wicon(kind) {
     const [c, x] = make(28, 28); x.lineCap = 'round'; x.lineJoin = 'round';
@@ -192,6 +225,7 @@
     ammo: ammo(), tilemap: tilemap(),
     player: [player(0), player(1), player(2)], enemy: [enemy(0), enemy(1), enemy(2)],
     woman: [woman(0), woman(1), woman(2)], key: key(), lock: lock(),
+    bandit: [bandit(0), bandit(1), bandit(2)], car: car(),
     wicon: ['pistol', 'bat', 'smg', 'shotgun', 'blaster', 'flame'].map(wicon),
     coin: coin(), home: home(),
     house1: building('#ff9aa2', '#e87f88', '#d65a6a', '#b8485a', 96, 96),
