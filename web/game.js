@@ -103,7 +103,18 @@ for (const h of houses) { const c = Math.floor((h.x + 48) / TS), r = Math.floor(
 for (const cr of cars) { if (ar() < 0.6) coins.push({ x: cr.x + 22, y: cr.y + 12 }); }
 
 let health = 100, lives = 3, totalCoins = 0, kills = 0, state = 'title', stamina = STAM_MAX, animClock = 0, respawnT = RESPAWN_EVERY;
-let combo = 0, comboT = 0, score = 0; let best = 0; try { best = +(localStorage.getItem('punktown_best') || 0); } catch (e) {}
+let combo = 0, comboT = 0, score = 0, coinsTotal = 0; let best = 0; try { best = +(localStorage.getItem('punktown_best') || 0); } catch (e) {}
+let dmgMul = 1, spdMul = 1, maxHealth = 100, dmgLvl = 0, spdLvl = 0, hpLvl = 0, nearHome = false;
+const SHOP = [
+  { label: '❤ Аптечка — повне HP', cost: () => 4, buy: () => { health = maxHealth; } },
+  { label: '🔫 Повний боєзапас', cost: () => 6, buy: () => { for (let i = 0; i < WEAPONS.length; i++) if (owned[i]) { wAmmo[i] = WEAPONS[i].mag; if (WEAPONS[i].mag !== Infinity) reserve[i] = MAX_MAGS; } } },
+  { label: '💪 Шкода +25%', cost: () => 12 + dmgLvl * 12, buy: () => { dmgMul += 0.25; dmgLvl++; } },
+  { label: '⚡ Швидкість +12%', cost: () => 10 + spdLvl * 10, buy: () => { spdMul += 0.12; spdLvl++; } },
+  { label: '🛡 Броня +25 HP', cost: () => 14 + hpLvl * 14, buy: () => { maxHealth += 25; health += 25; hpLvl++; } },
+  { label: '🔓 Випадкова зброя', cost: () => 20, buy: () => { const lk = [2, 3, 4, 5].filter(i => !owned[i]); if (lk.length) { const wi = lk[Math.floor(Math.random() * lk.length)]; owned[wi] = true; wAmmo[wi] = WEAPONS[wi].mag; } } },
+];
+function shopRowRect(i) { const w = 380, x = VIEW_W / 2 - w / 2, y = VIEW_H / 2 - 130 + 70 + i * 42; return { x, y, w, h: 36 }; }
+function buyItem(i) { const it = SHOP[i]; if (!it) return; const c = it.cost(); if (totalCoins >= c) { totalCoins -= c; it.buy(); AUDIO.sfx.pickup(); showToast('Куплено: ' + it.label); } else { AUDIO.sfx.hurt(); showToast('Замало монет (' + c + ')'); } }
 let endShown = false;
 const $title = document.getElementById('titleScreen'), $end = document.getElementById('endScreen');
 const reachCells = (LEVEL.reach || []).filter(([c, r]) => r >= 0 && r < ROWS && c >= 0 && c < COLS && !solid[r][c]);
@@ -161,7 +172,7 @@ function checkQuests() {
     if (q.type === 'key') { q.done = hasKey; q.prog = hasKey ? '✓' : '🔑'; }
     else if (q.type === 'rescue') { q.done = womanRescued; q.prog = womanRescued ? '✓' : (womanFreed ? 'веди ДОДОМУ' : (hasKey ? 'відчини будинок' : 'потрібен ключ')); }
     else if (q.type === 'boss') { q.done = bossDead; q.prog = q.done ? '✓' : (boss && boss.hp > 0 ? Math.ceil(boss.hp) + 'hp' : ''); }
-    else if (q.type === 'coins') { q.done = totalCoins >= q.target; q.prog = Math.min(totalCoins, q.target) + '/' + q.target; }
+    else if (q.type === 'coins') { q.done = coinsTotal >= q.target; q.prog = Math.min(coinsTotal, q.target) + '/' + q.target; }
     else if (q.type === 'kills') { q.done = kills >= q.target; q.prog = Math.min(kills, q.target) + '/' + q.target; }
     if (!q.done) all = false;
   }
@@ -186,14 +197,17 @@ addEventListener('keydown', e => {
   if (['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight', 'Space'].includes(e.code)) e.preventDefault();
   if (state === 'title' && (e.code === 'Space' || e.code === 'Enter')) startGame();
   else if ((state === 'win' || state === 'gameover') && e.code === 'KeyR') location.reload();
+  else if (e.code === 'KeyB' && state === 'play' && nearHome) { state = 'shop'; }
+  else if ((e.code === 'KeyB' || e.code === 'Escape') && state === 'shop') { state = 'play'; }
   else if (e.code === 'Escape' && state === 'play') { state = 'paused'; AUDIO.stopMusic(); }
   else if (e.code === 'Escape' && state === 'paused') { state = 'play'; AUDIO.startMusic(); }
+  else if (state === 'shop' && /^Digit[1-6]$/.test(e.code)) buyItem(+e.code.slice(5) - 1);
   if (e.code === 'KeyM') { const on = AUDIO.toggleMusic(); showToast(on ? '♪ музика увімкнена' : '♪ музика вимкнена'); }
 });
 addEventListener('keyup', e => { keys[e.code] = false; });
 const mouse = { x: VIEW_W / 2, y: VIEW_H / 2, down: false, moved: false };
 canvas.addEventListener('mousemove', e => { const r = canvas.getBoundingClientRect(); mouse.x = e.clientX - r.left; mouse.y = e.clientY - r.top; mouse.moved = true; });
-canvas.addEventListener('mousedown', () => { canvas.focus(); if (state === 'title') { startGame(); return; } if (state !== 'play') return; if (inQuestPanel(mouse.x, mouse.y)) { questsCollapsed = !questsCollapsed; return; } const wi = weaponSlotAt(mouse.x, mouse.y); if (wi >= 0) { if (owned[wi]) curW = wi; return; } mouse.down = true; });
+canvas.addEventListener('mousedown', () => { canvas.focus(); if (state === 'title') { startGame(); return; } if (state === 'shop') { for (let i = 0; i < SHOP.length; i++) { const r = shopRowRect(i); if (mouse.x >= r.x && mouse.x <= r.x + r.w && mouse.y >= r.y && mouse.y <= r.y + r.h) { buyItem(i); return; } } return; } if (state !== 'play') return; if (inQuestPanel(mouse.x, mouse.y)) { questsCollapsed = !questsCollapsed; return; } const wi = weaponSlotAt(mouse.x, mouse.y); if (wi >= 0) { if (owned[wi]) curW = wi; return; } mouse.down = true; });
 
 function startGame() { if (state !== 'title') return; state = 'play'; if ($title) $title.classList.add('hidden'); AUDIO.start(); tryFullscreen(); }
 function showEndScreen() {
@@ -222,6 +236,7 @@ const tMove = { id: null, ox: 0, oy: 0, x: 0, y: 0, active: false, mx: 0, my: 0 
 const tFire = { id: null, active: false };
 const fireBtn = { r: 54, get x() { return VIEW_W - 86; }, get y() { return VIEW_H - 86; } };   // big round fire button (bottom-right)
 const btnPause = { y: 48, w: 40, h: 32, get x() { return VIEW_W - 50; } };
+const btnShop = { x: 10, y: 100, w: 120, h: 34 };   // appears near home on mobile
 const inBtn = (b, x, y) => x >= b.x && x <= b.x + b.w && y >= b.y && y <= b.y + b.h;
 const inFire = (x, y) => Math.hypot(x - fireBtn.x, y - fireBtn.y) <= fireBtn.r + 12;
 // weapon selector bar (bottom-centre) — tap/click an icon to equip
@@ -243,8 +258,10 @@ canvas.addEventListener('touchstart', e => {
     const [x, y] = canvasXY(t);
     if (state === 'title') { startGame(); return; }
     if (state === 'win' || state === 'gameover') { location.reload(); return; }
+    if (state === 'shop') { let hit = false; for (let i = 0; i < SHOP.length; i++) { const r = shopRowRect(i); if (x >= r.x && x <= r.x + r.w && y >= r.y && y <= r.y + r.h) { buyItem(i); hit = true; break; } } if (!hit) state = 'play'; continue; }
     if (inBtn(btnPause, x, y)) { if (state === 'play') { state = 'paused'; AUDIO.stopMusic(); } else if (state === 'paused') { state = 'play'; AUDIO.startMusic(); } continue; }
     if (state !== 'play') continue;
+    if (nearHome && inBtn(btnShop, x, y)) { state = 'shop'; continue; }
     if (inQuestPanel(x, y)) { questsCollapsed = !questsCollapsed; continue; }
     { const wi = weaponSlotAt(x, y); if (wi >= 0) { if (owned[wi]) curW = wi; continue; } }
     if (inFire(x, y) && tFire.id === null) { tFire.id = t.identifier; tFire.active = true; }
@@ -283,7 +300,7 @@ function tryMove(e, dx, dy) {
 function hurt(dmg) {
   if (invuln > 0) return;
   health -= dmg; hurtFlash = Math.min(1, hurtFlash + 0.35); shakeT = 0.16; invuln = 0.7; AUDIO.sfx.hurt();
-  if (health <= 0) { lives--; if (lives <= 0) { state = 'gameover'; AUDIO.stopMusic(); AUDIO.sfx.lose(); return; } health = 100; player.x = LEVEL.playerStart[0]; player.y = LEVEL.playerStart[1]; invuln = 1.2; }
+  if (health <= 0) { lives--; if (lives <= 0) { state = 'gameover'; AUDIO.stopMusic(); AUDIO.sfx.lose(); return; } health = maxHealth; player.x = LEVEL.playerStart[0]; player.y = LEVEL.playerStart[1]; invuln = 1.2; }
 }
 let swingFx = 0, swingAng = 0;
 function deathFx(z) {
@@ -309,16 +326,17 @@ function deathFx(z) {
 function damageZombie(z, dmg, kx, ky) { z.hp -= dmg; z.flash = 0.12; z.x += (kx || 0) * 1.4; z.y += (ky || 0) * 1.4; if (z.hp <= 0) deathFx(z); }
 function fire(dx, dy) {
   const w = WEAPONS[curW]; const m = Math.hypot(dx, dy) || 1; dx /= m; dy /= m; face.x = dx; face.y = dy;
+  const dmg = Math.max(1, Math.round(w.dmg * dmgMul));
   const px = player.x + player.w / 2, py = player.y + player.h / 2;
   if (w.type === 'melee') {              // bat — short-range swing, no ammo
     swingFx = 0.16; swingAng = Math.atan2(dy, dx); shakeT = Math.max(shakeT, 0.05);
-    for (const z of zombies) { if (z.dead || z.hidden) continue; const zx = z.x + z.w / 2 - px, zy = z.y + z.h / 2 - py, d = Math.hypot(zx, zy); if (d <= w.range + 12 && (zx * dx + zy * dy) / (d || 1) > 0.1) damageZombie(z, w.dmg, dx, dy); }
+    for (const z of zombies) { if (z.dead || z.hidden) continue; const zx = z.x + z.w / 2 - px, zy = z.y + z.h / 2 - py, d = Math.hypot(zx, zy); if (d <= w.range + 12 && (zx * dx + zy * dy) / (d || 1) > 0.1) damageZombie(z, dmg, dx, dy); }
     AUDIO.sfx.melee(); return;
   }
   if (w.type === 'flame') {              // flamethrower — short cone, burns fuel
     wAmmo[curW]--;
     for (let i = 0; i < 3; i++) { const a = Math.atan2(dy, dx) + (Math.random() - 0.5) * w.spread, s = 150 + Math.random() * 130; particles.push({ x: px + dx * 10, y: py + dy * 10, vx: Math.cos(a) * s, vy: Math.sin(a) * s, life: 0.3 + Math.random() * 0.25, max: 0.55, color: ['#ff7a1a', '#ffd23f', '#ff4a1a'][i % 3], size: 4 + Math.random() * 3, grav: 0 }); }
-    for (const z of zombies) { if (z.dead || z.hidden) continue; const zx = z.x + z.w / 2 - px, zy = z.y + z.h / 2 - py, d = Math.hypot(zx, zy); if (d <= w.range && (zx * dx + zy * dy) / (d || 1) > 0.5) damageZombie(z, w.dmg, dx * 0.4, dy * 0.4); }
+    for (const z of zombies) { if (z.dead || z.hidden) continue; const zx = z.x + z.w / 2 - px, zy = z.y + z.h / 2 - py, d = Math.hypot(zx, zy); if (d <= w.range && (zx * dx + zy * dy) / (d || 1) > 0.5) damageZombie(z, dmg, dx * 0.4, dy * 0.4); }
     // ignite cars & buildings caught in the flame cone
     const ignite = (o, ocx, ocy) => { if (!o || o.fire) return; const ox = ocx - px, oy = ocy - py, d = Math.hypot(ox, oy); if (d <= w.range + 30 && (ox * dx + oy * dy) / (d || 1) > 0.35) { o.fire = 1; o.burnT = 60 + Math.random() * 60; showToast('🔥 Підпалено!'); } };
     for (const cr of cars) ignite(cr, cr.x + 23, cr.y + 14);
@@ -329,7 +347,7 @@ function fire(dx, dy) {
   // guns
   wAmmo[curW]--;
   const base = Math.atan2(dy, dx), mx = px + dx * 12, my = py + dy * 12;
-  for (let p = 0; p < w.pellets; p++) { const a = base + (w.pellets > 1 ? (Math.random() - 0.5) * w.spread * 2 : (Math.random() - 0.5) * w.spread); bullets.push({ x: mx, y: my, vx: Math.cos(a) * w.speed, vy: Math.sin(a) * w.speed, life: 1.0, dmg: w.dmg, color: w.color }); }
+  for (let p = 0; p < w.pellets; p++) { const a = base + (w.pellets > 1 ? (Math.random() - 0.5) * w.spread * 2 : (Math.random() - 0.5) * w.spread); bullets.push({ x: mx, y: my, vx: Math.cos(a) * w.speed, vy: Math.sin(a) * w.speed, life: 1.0, dmg: dmg, color: w.color }); }
   spawnBurst(mx, my, '#fff2a8', 3, 50, 2); shakeT = Math.max(shakeT, w.pellets > 1 ? 0.1 : 0.04);
   AUDIO.sfx.shoot(curW);
 }
@@ -369,7 +387,7 @@ function update(dt) {
   if (moving) { face.x = ix / mag; face.y = iy / mag; }
   const running = (keys.ShiftLeft || keys.ShiftRight || (tMove.active && mag > 0.92)) && stamina > 0 && moving;
   const onSand = tileAt(player.x + player.w / 2, player.y + player.h / 2) === 3;
-  const sp = SPEED * (running ? RUN_MULT : 1) * (onSand ? 0.5 : 1) * dt;
+  const sp = SPEED * spdMul * (running ? RUN_MULT : 1) * (onSand ? 0.5 : 1) * dt;
   let mvx = ix, mvy = iy; if (mag > 1) { mvx = ix / mag; mvy = iy / mag; }
   tryMove(player, mvx * sp, mvy * sp);
   if (moving) { player.walkT += dt * (running ? 1.5 : 1); player.frame = 1 + (Math.floor(player.walkT * 9) % 2); } else { player.frame = 0; }
@@ -470,15 +488,15 @@ function update(dt) {
   }
 
   // home heal
-  let onHome = false;
+  let onHome = false; nearHome = false;
   for (const hm of homes) if (aabb(player.x, player.y, player.w, player.h, hm.x - 16, hm.y - 40, 96 + 32, 112)) {
-    onHome = true; if (health < 100) { health = Math.min(100, health + 60 * dt); } for (let i = 0; i < WEAPONS.length; i++) if (owned[i]) { wAmmo[i] = WEAPONS[i].mag; if (WEAPONS[i].mag !== Infinity) reserve[i] = MAX_MAGS; }
+    onHome = true; nearHome = true; if (health < maxHealth) { health = Math.min(maxHealth, health + 60 * dt); } for (let i = 0; i < WEAPONS.length; i++) if (owned[i]) { wAmmo[i] = WEAPONS[i].mag; if (WEAPONS[i].mag !== Infinity) reserve[i] = MAX_MAGS; }
     healT -= dt; if (healT <= 0 && health < 100) { particles.push({ x: player.x + 9 + (Math.random() * 20 - 10), y: player.y + player.h, vx: Math.random() * 14 - 7, vy: -28, life: 0.6, max: 0.6, color: '#7dff9a', size: 3, grav: -10 }); healT = 0.14; }
   }
   stamina = clamp(stamina + (running ? -STAM_DRAIN : (onHome ? STAM_REGEN_HOME : STAM_REGEN)) * dt, 0, STAM_MAX);
 
   // pickups
-  coins = coins.filter(co => { if (aabb(player.x, player.y, player.w, player.h, co.x - 10, co.y - 10, 28, 28)) { totalCoins++; score += 10; spawnBurst(co.x, co.y, '#ffd23f', 8, 80, 2); AUDIO.sfx.coin(); return false; } return true; });
+  coins = coins.filter(co => { if (aabb(player.x, player.y, player.w, player.h, co.x - 10, co.y - 10, 28, 28)) { totalCoins++; coinsTotal++; score += 10; spawnBurst(co.x, co.y, '#ffd23f', 8, 80, 2); AUDIO.sfx.coin(); return false; } return true; });
   // key pickup
   if (keyItem && !keyItem.got && aabb(player.x, player.y, player.w, player.h, keyItem.x - 6, keyItem.y - 6, 28, 28)) { keyItem.got = true; hasKey = true; AUDIO.sfx.pickup(); spawnBurst(keyItem.x + 6, keyItem.y + 6, '#ffd23f', 16, 140, 3); showToast('Знайдено ключ! Іди до будинку 🏚'); }
   // unlock the house with the key
@@ -737,6 +755,8 @@ function draw() {
   else if (womanFreed && !womanRescued) drawPointer(homes[0].x + 48, homes[0].y, 'ДОДОМУ', '#3fbf60');
   if (boss && !bossDead) drawPointer(boss.x + 15, boss.y, 'БОС', '#ff5a4a');
   drawHUD(); drawQuests(); drawWeaponBar(); drawSpeech();
+  if (state === 'play' && nearHome) drawShopPrompt();
+  if (state === 'shop') drawShop();
   if (IS_TOUCH && (state === 'play' || state === 'paused')) drawTouchUI();
   if (state === 'paused') drawPause();
   // win / gameover are shown via the HTML #endScreen overlay (drawn over the frozen frame)
@@ -902,13 +922,38 @@ function drawSpeech() {
 }
 
 function panel(x, y, w, h) { ctx.fillStyle = 'rgba(18,30,22,0.84)'; rr(x, y, w, h, 12); ctx.fill(); ctx.strokeStyle = 'rgba(0,0,0,.35)'; ctx.lineWidth = 1.5; rr(x, y, w, h, 12); ctx.stroke(); }
+function drawShopPrompt() {
+  ctx.fillStyle = 'rgba(20,40,28,.85)'; rr(btnShop.x, btnShop.y, btnShop.w, btnShop.h, 10); ctx.fill();
+  ctx.strokeStyle = '#ffd23f'; ctx.lineWidth = 2; rr(btnShop.x, btnShop.y, btnShop.w, btnShop.h, 10); ctx.stroke();
+  ctx.fillStyle = '#ffe08a'; ctx.font = 'bold 15px Trebuchet MS,sans-serif'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+  ctx.fillText('🛒 Магазин' + (IS_TOUCH ? '' : ' (B)'), btnShop.x + btnShop.w / 2, btnShop.y + btnShop.h / 2);
+  ctx.textAlign = 'left'; ctx.textBaseline = 'alphabetic';
+}
+function drawShop() {
+  ctx.fillStyle = 'rgba(8,14,10,0.82)'; ctx.fillRect(0, 0, VIEW_W, VIEW_H);
+  const w = 380, x = VIEW_W / 2 - w / 2, y = VIEW_H / 2 - 130;
+  panel(x, y, w, 70 + SHOP.length * 42 + 16);
+  ctx.textAlign = 'center'; ctx.textBaseline = 'alphabetic';
+  ctx.fillStyle = '#ffe08a'; ctx.font = 'bold 26px Trebuchet MS,sans-serif'; ctx.fillText('🛒 МАГАЗИН ВИЖИВАЛЬНИКА', VIEW_W / 2, y + 34);
+  ctx.fillStyle = '#fff'; ctx.font = 'bold 16px Trebuchet MS,sans-serif'; ctx.fillText('💲 Монет: ' + totalCoins, VIEW_W / 2, y + 56);
+  for (let i = 0; i < SHOP.length; i++) {
+    const r = shopRowRect(i), c = SHOP[i].cost(), ok = totalCoins >= c;
+    ctx.fillStyle = ok ? 'rgba(60,90,55,0.7)' : 'rgba(60,40,40,0.5)'; rr(r.x, r.y, r.w, r.h, 8); ctx.fill();
+    ctx.textAlign = 'left'; ctx.textBaseline = 'middle'; ctx.fillStyle = ok ? '#fff' : '#b59a9a'; ctx.font = 'bold 15px Trebuchet MS,sans-serif';
+    ctx.fillText((IS_TOUCH ? '' : (i + 1) + '. ') + SHOP[i].label, r.x + 12, r.y + r.h / 2);
+    ctx.textAlign = 'right'; ctx.fillStyle = ok ? '#ffd23f' : '#ff7a7a'; ctx.fillText('💲' + c, r.x + r.w - 12, r.y + r.h / 2);
+  }
+  ctx.textAlign = 'center'; ctx.textBaseline = 'alphabetic'; ctx.fillStyle = 'rgba(255,255,255,.7)'; ctx.font = '13px Trebuchet MS,sans-serif';
+  ctx.fillText(IS_TOUCH ? 'Торкнись товару, щоб купити · торкнись поза списком — вийти' : 'Натисни 1–6 щоб купити · B/Esc — вийти', VIEW_W / 2, y + 70 + SHOP.length * 42 + 4);
+  ctx.textAlign = 'left'; ctx.textBaseline = 'alphabetic';
+}
 function drawHUD() {
   ctx.textBaseline = 'middle'; ctx.textAlign = 'left';
   // --- vitals panel (top-left) ---
   panel(10, 8, 216, 52);
   ctx.lineWidth = 2; ctx.strokeStyle = 'rgba(0,0,0,.35)';
   rr(20, 17, 150, 12, 6); ctx.stroke();
-  ctx.fillStyle = health > 60 ? '#7CFC68' : health > 30 ? '#ffd23f' : '#ff6f6f'; rr(21, 18, health / 100 * 148, 10, 5); ctx.fill();
+  ctx.fillStyle = health > maxHealth * 0.6 ? '#7CFC68' : health > maxHealth * 0.3 ? '#ffd23f' : '#ff6f6f'; rr(21, 18, Math.max(0, health) / maxHealth * 148, 10, 5); ctx.fill();
   ctx.strokeStyle = 'rgba(0,0,0,.35)'; rr(20, 35, 150, 10, 5); ctx.stroke();
   ctx.fillStyle = stamina > 25 ? '#56b8ff' : '#c46bff'; rr(21, 36, stamina / 100 * 148, 8, 4); ctx.fill();
   ctx.fillStyle = '#ff9aa2'; ctx.font = 'bold 20px Trebuchet MS,sans-serif'; ctx.fillText('♥' + lives, 180, 32);
