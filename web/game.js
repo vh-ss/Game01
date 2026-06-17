@@ -192,6 +192,34 @@ let driving = false, carHp = 0, nearVehicle = null;
 function enterCar(v) { driving = true; carHp = 100; player.x = v.x; player.y = v.y; const i = vehicles.indexOf(v); if (i >= 0) vehicles.splice(i, 1); showToast('🚗 За кермом! Дави ворогів'); }
 function exitCar() { if (!driving) return; driving = false; vehicles.push({ x: player.x, y: player.y, col: '#7a7a6a' }); }
 
+// wandering survivors that join your squad and fight
+function mkAlly(x, y) { return { x, y, w: 18, h: 22, vx: 0, vy: 0, t: 0, hp: 30, maxhp: 30, flash: 0, invuln: 0, frame: 0, walkT: 0, fireCD: 0, aimx: 1, aimy: 0, joined: false }; }
+const allies = [];
+{
+  const cells = reachCells.slice();
+  for (let i = cells.length - 1; i > 0; i--) { const j = Math.floor(Math.random() * (i + 1)); [cells[i], cells[j]] = [cells[j], cells[i]]; }
+  let n = 0;
+  for (const [c, r] of cells) { const wx = c * TS + 16, wy = r * TS + 16; if (Math.hypot(wx - player.x, wy - player.y) < 320) continue; if (allies.every(a => Math.hypot(a.x + 9 - wx, a.y + 11 - wy) > 320)) { allies.push(mkAlly(wx - 9, wy - 11)); if (++n >= 3) break; } }
+}
+function updateAllies(dt) {
+  for (let i = allies.length - 1; i >= 0; i--) {
+    const a = allies[i]; a.flash = Math.max(0, a.flash - dt); a.invuln = Math.max(0, a.invuln - dt);
+    const acx = a.x + 9, acy = a.y + 11, pcx = player.x + 9, pcy = player.y + 11;
+    if (!a.joined) {
+      if (Math.hypot(pcx - acx, pcy - acy) < 46) { a.joined = true; showToast('🤝 Вижилець приєднався!'); AUDIO.sfx.pickup(); }
+      else { a.t -= dt; if (a.t <= 0) { const an = Math.random() * 6.283; a.vx = Math.cos(an) * 38; a.vy = Math.sin(an) * 38; a.t = 0.6 + Math.random() * 1.5; } tryMove(a, a.vx * dt, a.vy * dt); a.frame = 1 + (Math.floor(animClock * 7 + a.x) % 2); }
+      continue;
+    }
+    const dd = Math.hypot(pcx - acx, pcy - acy);
+    if (dd > 54) { const s = 132 * dt; tryMove(a, (pcx - acx) / dd * s, (pcy - acy) / dd * s); a.walkT += dt; a.frame = 1 + (Math.floor(a.walkT * 8) % 2); } else a.frame = 0;
+    a.fireCD -= dt; let best = null, bd = 300 * 300;
+    for (const z of zombies) { if (z.dead || z.hidden) continue; const dx = z.x + z.w / 2 - acx, dy = z.y + z.h / 2 - acy, q = dx * dx + dy * dy; if (q < bd) { bd = q; best = [dx, dy]; } }
+    if (best) { const m = Math.hypot(best[0], best[1]) || 1; a.aimx = best[0] / m; a.aimy = best[1] / m; if (a.fireCD <= 0) { bullets.push({ x: acx, y: acy, vx: a.aimx * 520, vy: a.aimy * 520, life: 1.0, dmg: 1, color: '#9fd0e8' }); a.fireCD = 0.4; } }
+    for (const z of zombies) { if (!z.dead && !z.hidden && a.invuln <= 0 && aabb(a.x, a.y, a.w, a.h, z.x, z.y, z.w, z.h)) { a.hp -= 12; a.invuln = 0.6; a.flash = 0.14; spawnBurst(acx, acy, '#9fd0e8', 5, 80, 2); break; } }
+    if (a.hp <= 0) { spawnBurst(acx, acy, '#9fd0e8', 12, 130, 3); showToast('Вижилець загинув...'); allies.splice(i, 1); }
+  }
+}
+
 function checkQuests() {
   let all = true;
   for (const q of quests) {
@@ -606,7 +634,7 @@ function update(dt) {
   hurtFlash = Math.max(0, hurtFlash - dt * 1.5); shakeT = Math.max(0, shakeT - dt); invuln = Math.max(0, invuln - dt); toastT = Math.max(0, toastT - dt); swingFx = Math.max(0, swingFx - dt); speechT = Math.max(0, speechT - dt);
   comboT = Math.max(0, comboT - dt); if (comboT <= 0) combo = 0;
   for (let i = particles.length - 1; i >= 0; i--) { const p = particles[i]; p.vy += (p.grav || 0) * dt; p.x += p.vx * dt; p.y += p.vy * dt; p.life -= dt; if (p.life <= 0) particles.splice(i, 1); }
-  updateBurn(dt);
+  updateBurn(dt); updateAllies(dt);
 
   checkQuests();
 
@@ -757,6 +785,15 @@ function draw() {
     ctx.fillStyle = '#fff'; ctx.font = 'bold 9px Calibri'; ctx.textAlign = 'center'; ctx.fillText('♀', woman.x + 9 - cam.x, hy - 4);
     if (woman.weapon != null) { ctx.fillStyle = woman.ammo > 0 ? '#ffd23f' : '#ff6a6a'; ctx.font = 'bold 8px Calibri'; ctx.fillText('⦿' + woman.ammo, woman.x + 9 - cam.x, hy - 13); }
     ctx.textAlign = 'left';
+  }
+  // squad survivors
+  for (const a of allies) {
+    spr(IMG.player[a.frame], a.x - 3, a.y - 8);
+    if (a.flash > 0) { ctx.globalAlpha = a.flash / 0.14 * 0.7; ctx.fillStyle = '#fff'; ctx.fillRect(Math.round(a.x - 3 - cam.x), Math.round(a.y - 8 - cam.y), 24, 32); ctx.globalAlpha = 1; }
+    const ax = a.x + 9 - cam.x, ay = a.y - 12 - cam.y;
+    ctx.fillStyle = a.joined ? '#9fd0e8' : '#ffd23f'; ctx.beginPath(); ctx.arc(ax, ay - 2, 2.6, 0, 7); ctx.fill();   // marker dot
+    if (a.joined && a.hp < a.maxhp) { ctx.fillStyle = 'rgba(0,0,0,.5)'; ctx.fillRect(ax - 9, ay + 2, 18, 3); ctx.fillStyle = '#9fd0e8'; ctx.fillRect(ax - 9, ay + 2, 18 * Math.max(0, a.hp) / a.maxhp, 3); }
+    if (!a.joined) { ctx.fillStyle = '#ffd23f'; ctx.font = 'bold 11px Trebuchet MS,sans-serif'; ctx.textAlign = 'center'; ctx.fillText('?', ax, ay - 6); ctx.textAlign = 'left'; }
   }
 
   for (const z of zombies) {
