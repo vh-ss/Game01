@@ -34,10 +34,14 @@ function genWorld() {
       }
     }
   }
-  for (let i = 0; i < 22; i++) put(3 + ri(W - 10), 3 + ri(H - 10), 3 + ri(4), 3 + ri(4), 1, true);   // hedges
-  for (let i = 0; i < 12; i++) put(4 + ri(W - 14), 4 + ri(H - 14), 5 + ri(4), 4 + ri(4), 5, true);   // fenced yards
+  for (let i = 0; i < 34; i++) put(3 + ri(W - 10), 3 + ri(H - 10), 3 + ri(4), 3 + ri(4), 1, true);   // hedges
+  for (let i = 0; i < 16; i++) put(4 + ri(W - 14), 4 + ri(H - 14), 5 + ri(4), 4 + ri(4), 5, true);   // fenced yards
+  // short fence walls — extra cover/obstacles
+  for (let i = 0; i < 28; i++) { const fx = 3 + ri(W - 12), fy = 3 + ri(H - 12), len = 4 + ri(6), horiz = ri(2); for (let k = 0; k < len; k++) { const x = horiz ? fx + k : fx, y = horiz ? fy : fy + k; if (x > 0 && x < W - 1 && y > 0 && y < H - 1 && g[y][x] === 0) g[y][x] = 5; } }
   // tree clusters (woods)
-  for (let i = 0; i < 60; i++) { const cx = 3 + ri(W - 6), cy = 3 + ri(H - 6); for (let k = 0; k < 6; k++) { const x = cx + ri(6) - 3, y = cy + ri(6) - 3; if (x > 0 && x < W - 1 && y > 0 && y < H - 1 && g[y][x] === 0) g[y][x] = 4; } }
+  for (let i = 0; i < 100; i++) { const cx = 3 + ri(W - 6), cy = 3 + ri(H - 6); for (let k = 0; k < 7; k++) { const x = cx + ri(7) - 3, y = cy + ri(7) - 3; if (x > 0 && x < W - 1 && y > 0 && y < H - 1 && g[y][x] === 0) g[y][x] = 4; } }
+  // scattered lone trees for denser obstacles
+  for (let i = 0; i < 280; i++) { const x = 2 + ri(W - 4), y = 2 + ri(H - 4); if (g[y][x] === 0) g[y][x] = 4; }
 
   // central plaza + home
   const cx = W / 2 | 0, cy = H / 2 | 0;

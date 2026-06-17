@@ -67,7 +67,12 @@ const reachable = (c, r) => (LEVEL.reach ? !!reach[r] && reach[r][c] : !solid[r]
 // ammo crates on random reachable, open tiles (never inside enclosed/unreachable spots)
 let aSeed = 777; const ar = () => (aSeed = (aSeed * 1103515245 + 12345) & 0x7fffffff) / 0x7fffffff;
 let ammoCrates = [];
-{ let tries = 0; while (ammoCrates.length < 10 && tries++ < 3000) { const c = 1 + Math.floor(ar() * (COLS - 2)), r = 1 + Math.floor(ar() * (ROWS - 2)); const wx = c * TS, wy = r * TS; if (Math.abs(wx - player.x) < 100 && Math.abs(wy - player.y) < 100) continue; if (reachable(c, r) && ammoCrates.every(a => Math.abs(a.x - wx) > 140 || Math.abs(a.y - wy) > 140)) ammoCrates.push({ x: wx + 6, y: wy + 6, w: 20, h: 20 }); } }
+{ let tries = 0; while (ammoCrates.length < 14 && tries++ < 4000) { const c = 1 + Math.floor(ar() * (COLS - 2)), r = 1 + Math.floor(ar() * (ROWS - 2)); const wx = c * TS, wy = r * TS; if (Math.abs(wx - player.x) < 100 && Math.abs(wy - player.y) < 100) continue; if (reachable(c, r) && ammoCrates.every(a => Math.abs(a.x - wx) > 140 || Math.abs(a.y - wy) > 140)) ammoCrates.push({ x: wx + 6, y: wy + 6, w: 20, h: 20 }); } }
+// stock ~half the houses with ammo by their door (only where reachable)
+for (const h of houses) {
+  const c = Math.floor((h.x + 48) / TS), r = Math.floor((h.y + 84) / TS);
+  if (r >= 0 && r < ROWS && c >= 0 && c < COLS && reachable(c, r) && ar() < 0.5) ammoCrates.push({ x: c * TS + 6, y: r * TS + 6, w: 20, h: 20 });
+}
 
 let health = 100, lives = 3, totalCoins = 0, kills = 0, state = 'menu', stamina = STAM_MAX, animClock = 0, respawnT = RESPAWN_EVERY;
 const reachCells = (LEVEL.reach || []).filter(([c, r]) => r >= 0 && r < ROWS && c >= 0 && c < COLS && !solid[r][c]);
