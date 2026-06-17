@@ -107,6 +107,17 @@ let health = 100, lives = 3, totalCoins = 0, kills = 0, state = 'title', stamina
 let combo = 0, comboT = 0, score = 0, coinsTotal = 0; let best = 0; try { best = +(localStorage.getItem('punktown_best') || 0); } catch (e) {}
 let dmgMul = 1, spdMul = 1, maxHealth = 100, dmgLvl = 0, spdLvl = 0, hpLvl = 0, nearHome = false;
 const DAYCYCLE = 140; let nightF = 0;   // 0 = day, 1 = deep night
+let eventT = 35 + Math.random() * 30, eventMsg = '', eventMsgT = 0, supplyMarker = null;
+function announce(t) { eventMsg = t; eventMsgT = 3.5; shakeT = Math.max(shakeT, 0.15); AUDIO.sfx.hurt(); }
+function triggerEvent() {
+  const px = player.x, py = player.y;
+  const near = reachCells.filter(([c, r]) => { const d = Math.hypot(c * TS - px, r * TS - py); return d > 340 && d < 700; });
+  const pick = () => near.length ? near[Math.floor(Math.random() * near.length)] : null;
+  const r = Math.random();
+  if (r < 0.45) { const n = 10 + Math.floor(Math.random() * 8); for (let k = 0; k < n; k++) { const s = pick(); if (s) zombies.push(mkZombie(s[0] * TS, s[1] * TS)); } announce('🧟 ОРДА ЗОМБІ!'); }
+  else if (r < 0.75) { const n = 5 + Math.floor(Math.random() * 5); for (let k = 0; k < n; k++) { const s = pick(); if (s) zombies.push(mkCrim(s[0] * TS, s[1] * TS)); } announce('🦹 НАБІГ БАНДИТІВ!'); }
+  else { const s = pick(); if (s) { const sx = s[0] * TS, sy = s[1] * TS; for (let k = 0; k < 6; k++) coins.push({ x: sx + Math.random() * 44 - 22, y: sy + Math.random() * 44 - 22, v: coinVal() + 2 }); ammoCrates.push({ x: sx, y: sy, w: 20, h: 20 }); supplyMarker = { x: sx + 10, y: sy + 10, t: 32 }; announce('📦 ПОСТАЧАННЯ!'); AUDIO.sfx.pickup(); } }
+}
 const SHOP = [
   { label: '❤ Аптечка — повне HP', cost: () => 4, buy: () => { health = maxHealth; } },
   { label: '🔫 Повний боєзапас', cost: () => 6, buy: () => { for (let i = 0; i < WEAPONS.length; i++) if (owned[i]) { wAmmo[i] = WEAPONS[i].mag; if (WEAPONS[i].mag !== Infinity) reserve[i] = MAX_MAGS; } } },
@@ -430,6 +441,10 @@ function update(dt) {
 
   // zombie respawn (keeps the town populated)
   respawnT -= dt; if (respawnT <= 0) { respawnT = RESPAWN_EVERY * (1 - nightF * 0.6); respawnZombie(); if (nightF > 0.55) respawnZombie(); }   // hordes at night
+  // dynamic events
+  eventT -= dt; if (eventT <= 0) { eventT = 45 + Math.random() * 40; triggerEvent(); }
+  eventMsgT = Math.max(0, eventMsgT - dt);
+  if (supplyMarker) { supplyMarker.t -= dt; if (supplyMarker.t <= 0) supplyMarker = null; }
 
   // ambush bushes — spring the hidden gang when the player gets close
   for (const b of bushes) {
@@ -766,6 +781,7 @@ function draw() {
   else if (hasKey && !womanFreed && lockedHouse) drawPointer(lockedHouse.x + 48, lockedHouse.y + 30, 'БУДИНОК', '#9fe0ff');
   else if (womanFreed && !womanRescued) drawPointer(homes[0].x + 48, homes[0].y, 'ДОДОМУ', '#3fbf60');
   if (boss && !bossDead) drawPointer(boss.x + 15, boss.y, 'БОС', '#ff5a4a');
+  if (supplyMarker) drawPointer(supplyMarker.x, supplyMarker.y, '📦', '#ffe08a');
   drawHUD(); drawQuests(); drawWeaponBar(); drawSpeech();
   if (state === 'play' && nearHome) drawShopPrompt();
   if (state === 'shop') drawShop();
@@ -1002,6 +1018,8 @@ function drawHUD() {
   }
   // combo
   if (combo > 1) { const a = Math.min(1, comboT); ctx.globalAlpha = a; ctx.textAlign = 'center'; ctx.font = 'bold 26px Trebuchet MS,sans-serif'; ctx.fillStyle = '#000'; ctx.fillText('КОМБО ×' + combo, VIEW_W / 2 + 1, 112); ctx.fillStyle = combo >= 10 ? '#ff5a4a' : '#ffd23f'; ctx.fillText('КОМБО ×' + combo, VIEW_W / 2, 111); ctx.textAlign = 'left'; ctx.globalAlpha = 1; }
+  // event announcement banner
+  if (eventMsgT > 0) { const a = Math.min(1, eventMsgT); ctx.globalAlpha = a; ctx.textAlign = 'center'; ctx.font = 'bold 36px Trebuchet MS,sans-serif'; ctx.fillStyle = '#000'; ctx.fillText(eventMsg, VIEW_W / 2 + 2, 162); ctx.fillStyle = '#ff5a4a'; ctx.fillText(eventMsg, VIEW_W / 2, 160); ctx.textAlign = 'left'; ctx.globalAlpha = 1; }
   // toast
   if (toastT > 0) { ctx.globalAlpha = Math.min(1, toastT); ctx.font = 'bold 22px Trebuchet MS,sans-serif'; ctx.textAlign = 'center'; ctx.fillStyle = '#000'; ctx.fillText(toast, VIEW_W / 2 + 1, 81); ctx.fillStyle = '#ffd23f'; ctx.fillText(toast, VIEW_W / 2, 80); ctx.textAlign = 'left'; ctx.globalAlpha = 1; }
 }
