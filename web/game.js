@@ -2,6 +2,8 @@
 // zombies, heal at home. Sunny, friendly atmosphere (no horror).
 
 const LEVEL = genWorld();   // fresh procedural town every run/restart
+let district = 1; try { district = Math.max(1, +(sessionStorage.getItem('punktown_district') || 1)); } catch (e) {}
+const HPBONUS = district - 1;   // tougher zombies in later districts
 let VIEW_W = window.innerWidth, VIEW_H = window.innerHeight, DPR = Math.min(window.devicePixelRatio || 1, 2);
 const TS = LEVEL.tileSize;
 const COLS = LEVEL.width / TS, ROWS = LEVEL.height / TS;
@@ -12,7 +14,7 @@ const SPEED = 110, RUN_MULT = 1.8;
 const STAM_MAX = 100, STAM_DRAIN = 32, STAM_REGEN = 10, STAM_REGEN_HOME = 50;
 const ZSPEED = 48, ZCHASE = 80;
 const ZHP = 4, LOOT_CHANCE = 0.3;
-const MAX_ZOMBIES = 50, RESPAWN_EVERY = 2.2;
+const MAX_ZOMBIES = 50 + (district - 1) * 8, RESPAWN_EVERY = Math.max(1.0, 2.2 - (district - 1) * 0.18);
 // some zombies are armed (different guns); each fires single shots — max 1 bullet in flight
 const ARMED_CHANCE = 0.3;
 const ZWEAPONS = [
@@ -68,6 +70,7 @@ function mkZombie(x, y) {
   else if (r < 0.30) { ztype = 'tank'; hp = 14; w = 26; h = 30; sm = 0.6; armable = false; }
   else if (r < 0.42) { ztype = 'exploder'; hp = 3; w = 18; h = 22; sm = 1.1; armable = false; }
   const armed = armable && Math.random() < ARMED_CHANCE;
+  hp += HPBONUS;
   return { x, y, w, h, vx: 0, vy: 0, t: 0, hp, maxhp: hp, flash: 0, frame: 0, ztype, sm,
     armed, zw: armed ? Math.floor(Math.random() * ZWEAPONS.length) : 0,
     shootCD: 0.6 + Math.random() * 2, hasBullet: false, aimx: 1, aimy: 0 };
@@ -161,6 +164,7 @@ function questSpot(minFromPlayer) {
 })();
 // gangs of coin-stealing bandits, scattered across the town
 for (let gi = 0; gi < 7; gi++) { const s = questSpot(380); const n = 3 + ri(4); for (let k = 0; k < n; k++) zombies.push(mkCrim(s[0] + ri(80) - 40, s[1] + ri(80) - 40)); }
+for (let k = 0; k < (district - 1) * 8; k++) { const s = questSpot(300); zombies.push(mkZombie(s[0] + ri(60) - 30, s[1] + ri(60) - 30)); }   // harder districts = more zombies
 
 // bushes (decor) — some hide an ambush gang that springs out when you get close
 const bushes = [];
@@ -289,12 +293,18 @@ function showEndScreen() {
   if (score > best) { best = score; try { localStorage.setItem('punktown_best', best); } catch (e) {} }
   const t = document.getElementById('endTitle'), p = document.getElementById('endText');
   const stat = ' · Очки: ' + score + ' · Рекорд: ' + best + ' · Вбито: ' + kills;
-  if (state === 'win') { t.textContent = '🎉 ПЕРЕМОГА!'; t.className = 'win'; p.textContent = 'Жінку врятовано, боса повалено!' + stat; }
-  else { t.textContent = '☠ КІНЕЦЬ ГРИ'; t.className = 'lose'; p.textContent = (failReason || 'Тебе здолали.') + stat; }
+  const btn = document.getElementById('againBtn');
+  if (state === 'win') {
+    t.textContent = '🎉 РАЙОН ' + district + ' ЗАЧИЩЕНО!'; t.className = 'win'; p.textContent = 'Жінку врятовано, боса повалено!' + stat;
+    btn.textContent = '➜ Наступний район'; btn.onclick = () => { try { sessionStorage.setItem('punktown_district', district + 1); } catch (e) {} location.reload(); };
+  } else {
+    t.textContent = '☠ КІНЕЦЬ ГРИ'; t.className = 'lose'; p.textContent = (failReason || 'Тебе здолали.') + ' · Дійшов до району ' + district + stat;
+    btn.textContent = '↺ Почати з 1 району'; btn.onclick = () => { try { sessionStorage.setItem('punktown_district', 1); } catch (e) {} location.reload(); };
+  }
   $end.classList.remove('hidden');
 }
 document.getElementById('startBtn').addEventListener('click', startGame);
-document.getElementById('againBtn').addEventListener('click', () => location.reload());
+// (againBtn handler is set per-result in showEndScreen)
 const isMobile = () => matchMedia('(pointer:coarse)').matches || innerWidth < 820;
 function tryFullscreen() {
   if (!isMobile()) return;
@@ -1141,6 +1151,7 @@ function drawHUD() {
     ctx.fillStyle = night ? '#cfd6ff' : '#ffd23f'; ctx.beginPath(); ctx.arc(ix, iy, 10, 0, 7); ctx.fill();
     if (night) { ctx.fillStyle = 'rgba(18,30,22,0.95)'; ctx.beginPath(); ctx.arc(ix + 4, iy - 3, 9, 0, 7); ctx.fill(); }   // moon crescent
     else { ctx.strokeStyle = '#ffd23f'; ctx.lineWidth = 2; for (let a = 0; a < 8; a++) { const an = a / 8 * 6.283; ctx.beginPath(); ctx.moveTo(ix + Math.cos(an) * 13, iy + Math.sin(an) * 13); ctx.lineTo(ix + Math.cos(an) * 16, iy + Math.sin(an) * 16); ctx.stroke(); } }
+    ctx.fillStyle = '#cfd6c0'; ctx.font = 'bold 12px Trebuchet MS,sans-serif'; ctx.textAlign = 'center'; ctx.fillText('Район ' + district, ix, 46); ctx.textAlign = 'left';
   }
   // combo
   if (combo > 1) { const a = Math.min(1, comboT); ctx.globalAlpha = a; ctx.textAlign = 'center'; ctx.font = 'bold 26px Trebuchet MS,sans-serif'; ctx.fillStyle = '#000'; ctx.fillText('КОМБО ×' + combo, VIEW_W / 2 + 1, 112); ctx.fillStyle = combo >= 10 ? '#ff5a4a' : '#ffd23f'; ctx.fillText('КОМБО ×' + combo, VIEW_W / 2, 111); ctx.textAlign = 'left'; ctx.globalAlpha = 1; }
