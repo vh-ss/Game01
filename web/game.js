@@ -61,8 +61,14 @@ const tileAt = (px, py) => { const c = Math.floor(px / TS), r = Math.floor(py / 
 const player = { x: LEVEL.playerStart[0], y: LEVEL.playerStart[1], w: 18, h: 22, walkT: 0, frame: 0 };
 const zombies = LEVEL.zombies.map(([x, y]) => mkZombie(x, y));
 function mkZombie(x, y) {
-  const armed = Math.random() < ARMED_CHANCE;
-  return { x, y, w: 18, h: 22, vx: 0, vy: 0, t: 0, hp: ZHP, flash: 0, frame: 0,
+  // type: normal / runner (fast, weak) / tank (slow, tough, big) / exploder (bursts on death)
+  const r = Math.random();
+  let ztype = 'normal', hp = ZHP, w = 18, h = 22, sm = 1, armable = true;
+  if (r < 0.18) { ztype = 'runner'; hp = 2; w = 16; h = 20; sm = 1.8; armable = false; }
+  else if (r < 0.30) { ztype = 'tank'; hp = 14; w = 26; h = 30; sm = 0.6; armable = false; }
+  else if (r < 0.42) { ztype = 'exploder'; hp = 3; w = 18; h = 22; sm = 1.1; armable = false; }
+  const armed = armable && Math.random() < ARMED_CHANCE;
+  return { x, y, w, h, vx: 0, vy: 0, t: 0, hp, maxhp: hp, flash: 0, frame: 0, ztype, sm,
     armed, zw: armed ? Math.floor(Math.random() * ZWEAPONS.length) : 0,
     shootCD: 0.6 + Math.random() * 2, hasBullet: false, aimx: 1, aimy: 0 };
 }
@@ -97,6 +103,7 @@ for (const h of houses) { const c = Math.floor((h.x + 48) / TS), r = Math.floor(
 for (const cr of cars) { if (ar() < 0.6) coins.push({ x: cr.x + 22, y: cr.y + 12 }); }
 
 let health = 100, lives = 3, totalCoins = 0, kills = 0, state = 'title', stamina = STAM_MAX, animClock = 0, respawnT = RESPAWN_EVERY;
+let combo = 0, comboT = 0, score = 0; let best = 0; try { best = +(localStorage.getItem('punktown_best') || 0); } catch (e) {}
 let endShown = false;
 const $title = document.getElementById('titleScreen'), $end = document.getElementById('endScreen');
 const reachCells = (LEVEL.reach || []).filter(([c, r]) => r >= 0 && r < ROWS && c >= 0 && c < COLS && !solid[r][c]);
@@ -191,9 +198,11 @@ canvas.addEventListener('mousedown', () => { canvas.focus(); if (state === 'titl
 function startGame() { if (state !== 'title') return; state = 'play'; if ($title) $title.classList.add('hidden'); AUDIO.start(); tryFullscreen(); }
 function showEndScreen() {
   if (!$end) return;
+  if (score > best) { best = score; try { localStorage.setItem('punktown_best', best); } catch (e) {} }
   const t = document.getElementById('endTitle'), p = document.getElementById('endText');
-  if (state === 'win') { t.textContent = '🎉 ПЕРЕМОГА!'; t.className = 'win'; p.textContent = 'Жінку врятовано, боса повалено, місто очищено! Вбито ворогів: ' + kills + '.'; }
-  else { t.textContent = '☠ КІНЕЦЬ ГРИ'; t.className = 'lose'; p.textContent = failReason || 'Тебе здолали. Спробуй ще — щоразу нова мапа.'; }
+  const stat = ' · Очки: ' + score + ' · Рекорд: ' + best + ' · Вбито: ' + kills;
+  if (state === 'win') { t.textContent = '🎉 ПЕРЕМОГА!'; t.className = 'win'; p.textContent = 'Жінку врятовано, боса повалено!' + stat; }
+  else { t.textContent = '☠ КІНЕЦЬ ГРИ'; t.className = 'lose'; p.textContent = (failReason || 'Тебе здолали.') + stat; }
   $end.classList.remove('hidden');
 }
 document.getElementById('startBtn').addEventListener('click', startGame);
@@ -286,8 +295,16 @@ function deathFx(z) {
     if (z.stolenWeapon != null) loot.push({ x: z.x, y: z.y, w: 22, h: 18, weapon: z.stolenWeapon });   // drop stolen weapon
     if (z.carrying > 0 || z.stolenWeapon != null) showToast('Здобич повернуто! 💰');
   }
+  else if (z.ztype === 'exploder') {                    // blows up on death — chains & hurts player
+    spawnBurst(z.x + 9, z.y + 11, '#ff7a1a', 26, 240, 4); spawnBurst(z.x + 9, z.y + 11, '#ffd23f', 12, 180, 3); shakeT = Math.max(shakeT, 0.28);
+    const ex = z.x + z.w / 2, ey = z.y + z.h / 2, R = 72;
+    if (Math.hypot(player.x + 9 - ex, player.y + 11 - ey) < R) hurt(26);
+    for (const o of zombies) { if (o !== z && !o.dead && !o.hidden && Math.hypot(o.x + o.w / 2 - ex, o.y + o.h / 2 - ey) < R) damageZombie(o, 6, 0, 0); }
+  }
   else spawnBurst(z.x + 9, z.y + 11, '#8ec257', 16, 170, 3);
   spawnBurst(z.x + 9, z.y + 11, '#ffffff', 6, 120, 2); dropLoot(z); kills++; AUDIO.sfx.zombie();
+  // combo & score
+  combo++; comboT = 2.6; score += Math.round((z.isBoss ? 200 : z.ztype === 'tank' ? 30 : 12) * (1 + Math.min(combo, 25) * 0.12));
 }
 function damageZombie(z, dmg, kx, ky) { z.hp -= dmg; z.flash = 0.12; z.x += (kx || 0) * 1.4; z.y += (ky || 0) * 1.4; if (z.hp <= 0) deathFx(z); }
 function fire(dx, dy) {
@@ -406,7 +423,7 @@ function update(dt) {
     z.frame = 1 + (Math.floor(animClock * 8 + z.x * 0.05) % 2);
     const zx = z.x + z.w / 2, zy = z.y + z.h / 2, px = player.x + player.w / 2, py = player.y + player.h / 2;
     const d = Math.hypot(px - zx, py - zy);
-    const chaseR = z.crim ? 300 : 220, spd = z.crim ? ZCHASE * 1.15 : ZCHASE;   // bandits are a bit faster
+    const chaseR = z.crim ? 300 : 220, spd = (z.crim ? ZCHASE * 1.15 : ZCHASE) * (z.sm || 1);   // type speed
     if (z.crim && z.fleeT > 0) { const m = d || 1; z.vx = (zx - px) / m * spd * 1.3; z.vy = (zy - py) / m * spd * 1.3; }  // run away after a theft
     else if (d < chaseR) { const m = d || 1; z.vx = (px - zx) / m * spd; z.vy = (py - zy) / m * spd; }
     else { z.t -= dt; if (z.t <= 0) pickDir(z); }
@@ -440,7 +457,7 @@ function update(dt) {
           } else if (totalCoins > 0) { totalCoins--; z.carrying++; showToast('Бандит вкрав монету! 💰'); stole = true; }
           hurt(8); z.stealCD = 1.0; if (stole) z.fleeT = 4.0;       // flee after a successful theft
         }
-      } else hurt(16);
+      } else hurt(z.ztype === 'tank' ? 26 : 16);
     }
   }
 
@@ -461,7 +478,7 @@ function update(dt) {
   stamina = clamp(stamina + (running ? -STAM_DRAIN : (onHome ? STAM_REGEN_HOME : STAM_REGEN)) * dt, 0, STAM_MAX);
 
   // pickups
-  coins = coins.filter(co => { if (aabb(player.x, player.y, player.w, player.h, co.x - 10, co.y - 10, 28, 28)) { totalCoins++; spawnBurst(co.x, co.y, '#ffd23f', 8, 80, 2); AUDIO.sfx.coin(); return false; } return true; });
+  coins = coins.filter(co => { if (aabb(player.x, player.y, player.w, player.h, co.x - 10, co.y - 10, 28, 28)) { totalCoins++; score += 10; spawnBurst(co.x, co.y, '#ffd23f', 8, 80, 2); AUDIO.sfx.coin(); return false; } return true; });
   // key pickup
   if (keyItem && !keyItem.got && aabb(player.x, player.y, player.w, player.h, keyItem.x - 6, keyItem.y - 6, 28, 28)) { keyItem.got = true; hasKey = true; AUDIO.sfx.pickup(); spawnBurst(keyItem.x + 6, keyItem.y + 6, '#ffd23f', 16, 140, 3); showToast('Знайдено ключ! Іди до будинку 🏚'); }
   // unlock the house with the key
@@ -527,6 +544,7 @@ function update(dt) {
 
   // timers + particles
   hurtFlash = Math.max(0, hurtFlash - dt * 1.5); shakeT = Math.max(0, shakeT - dt); invuln = Math.max(0, invuln - dt); toastT = Math.max(0, toastT - dt); swingFx = Math.max(0, swingFx - dt); speechT = Math.max(0, speechT - dt);
+  comboT = Math.max(0, comboT - dt); if (comboT <= 0) combo = 0;
   for (let i = particles.length - 1; i >= 0; i--) { const p = particles[i]; p.vy += (p.grav || 0) * dt; p.x += p.vx * dt; p.y += p.vy * dt; p.life -= dt; if (p.life <= 0) particles.splice(i, 1); }
   updateBurn(dt);
 
@@ -669,10 +687,15 @@ function draw() {
       ctx.fillStyle = 'rgba(0,0,0,.6)'; ctx.fillRect(bxx, byy, bw, 5); ctx.fillStyle = '#ff4a3a'; ctx.fillRect(bxx, byy, bw * Math.max(0, z.hp) / z.maxhp, 5);
       ctx.fillStyle = '#fff'; ctx.font = 'bold 11px Calibri'; ctx.textAlign = 'center'; ctx.fillText('☠ ' + z.name, Math.round(z.x + 15 - cam.x), byy - 6); ctx.textAlign = 'left';
     } else {
-      spr((z.crim ? IMG.bandit : IMG.enemy)[z.frame], z.x - 3, z.y - 8);
-      if (z.flash > 0) { ctx.globalAlpha = z.flash / 0.12 * 0.7; ctx.fillStyle = '#fff'; ctx.fillRect(Math.round(z.x - 3 - cam.x), Math.round(z.y - 8 - cam.y), 24, 32); ctx.globalAlpha = 1; }
-      const mh = z.crim ? 5 : ZHP;
-      if (z.hp < mh) { const hx = Math.round(z.x - cam.x), hy = Math.round(z.y - 12 - cam.y); ctx.fillStyle = 'rgba(0,0,0,.5)'; ctx.fillRect(hx, hy, z.w, 3); ctx.fillStyle = z.crim ? '#e0518f' : '#6fd14a'; ctx.fillRect(hx, hy, z.w * Math.max(0, z.hp) / mh, 3); }
+      const img = (z.crim ? IMG.bandit : IMG.enemy)[z.frame];
+      const sc = z.ztype === 'tank' ? 1.45 : z.ztype === 'runner' ? 0.85 : 1;
+      const dw = Math.round(24 * sc), dh = Math.round(32 * sc), sx = Math.round(z.x + z.w / 2 - dw / 2 - cam.x), sy = Math.round(z.y + z.h - dh - cam.y + 2);
+      if (z.ztype === 'exploder') { const fl = 0.4 + 0.3 * Math.sin(animClock * 9 + z.x); ctx.save(); ctx.globalAlpha = fl; ctx.fillStyle = '#ff5a2a'; ctx.beginPath(); ctx.arc(sx + dw / 2, sy + dh / 2, 16, 0, 7); ctx.fill(); ctx.restore(); }
+      ctx.drawImage(img, sx, sy, dw, dh);
+      if (z.ztype === 'tank') { ctx.save(); ctx.globalCompositeOperation = 'multiply'; ctx.globalAlpha = .5; ctx.fillStyle = '#3a5a3a'; ctx.fillRect(sx, sy, dw, dh); ctx.restore(); }
+      if (z.flash > 0) { ctx.globalAlpha = z.flash / 0.12 * 0.7; ctx.fillStyle = '#fff'; ctx.fillRect(sx, sy, dw, dh); ctx.globalAlpha = 1; }
+      const mh = z.maxhp || (z.crim ? 5 : ZHP);
+      if (z.hp < mh) { const hx = Math.round(z.x - cam.x), hy = Math.round(z.y - 12 - cam.y); ctx.fillStyle = 'rgba(0,0,0,.5)'; ctx.fillRect(hx, hy, z.w, 3); ctx.fillStyle = z.crim ? '#e0518f' : z.ztype === 'tank' ? '#c0392b' : '#6fd14a'; ctx.fillRect(hx, hy, z.w * Math.max(0, z.hp) / mh, 3); }
     }
     // armed zombies: little gun aimed at you + a coloured danger dot
     if (z.armed) {
@@ -898,12 +921,16 @@ function drawHUD() {
   ctx.fillText(w.mag === Infinity ? '⦿ ∞' : ('⦿ ' + wAmmo[curW] + '/' + w.mag), 280, 44);
   if (w.mag !== Infinity) for (let m = 0; m < MAX_MAGS; m++) { ctx.fillStyle = m < reserve[curW] ? '#ffd23f' : 'rgba(255,255,255,0.18)'; ctx.fillRect(376 + m * 10, 40, 8, 8); }
   // --- score panel (top-right): icons left, numbers right-aligned ---
-  const pw = 104, sx = VIEW_W - 10 - pw;
-  panel(sx, 8, pw, 52);
-  ctx.drawImage(IMG.coin, sx + 12, 12, 22, 22);
-  ctx.fillStyle = '#ffd23f'; ctx.font = 'bold 19px Trebuchet MS,sans-serif'; ctx.textAlign = 'right'; ctx.fillText('' + totalCoins, sx + pw - 14, 23);
-  ctx.fillStyle = '#9bf09b'; ctx.font = 'bold 18px Trebuchet MS,sans-serif'; ctx.textAlign = 'left'; ctx.fillText('☠', sx + 13, 45);
-  ctx.textAlign = 'right'; ctx.fillText('' + kills, sx + pw - 14, 45); ctx.textAlign = 'left';
+  const pw = 120, sx = VIEW_W - 10 - pw;
+  panel(sx, 8, pw, 70);
+  ctx.drawImage(IMG.coin, sx + 12, 11, 20, 20);
+  ctx.fillStyle = '#ffd23f'; ctx.font = 'bold 18px Trebuchet MS,sans-serif'; ctx.textAlign = 'right'; ctx.fillText('' + totalCoins, sx + pw - 14, 21);
+  ctx.fillStyle = '#9bf09b'; ctx.font = 'bold 17px Trebuchet MS,sans-serif'; ctx.textAlign = 'left'; ctx.fillText('☠', sx + 13, 41);
+  ctx.textAlign = 'right'; ctx.fillText('' + kills, sx + pw - 14, 41);
+  ctx.textAlign = 'left'; ctx.fillStyle = '#ffe08a'; ctx.font = 'bold 15px Trebuchet MS,sans-serif'; ctx.fillText('✦', sx + 13, 60);
+  ctx.textAlign = 'right'; ctx.fillText('' + score, sx + pw - 14, 60); ctx.textAlign = 'left';
+  // combo
+  if (combo > 1) { const a = Math.min(1, comboT); ctx.globalAlpha = a; ctx.textAlign = 'center'; ctx.font = 'bold 26px Trebuchet MS,sans-serif'; ctx.fillStyle = '#000'; ctx.fillText('КОМБО ×' + combo, VIEW_W / 2 + 1, 112); ctx.fillStyle = combo >= 10 ? '#ff5a4a' : '#ffd23f'; ctx.fillText('КОМБО ×' + combo, VIEW_W / 2, 111); ctx.textAlign = 'left'; ctx.globalAlpha = 1; }
   // toast
   if (toastT > 0) { ctx.globalAlpha = Math.min(1, toastT); ctx.font = 'bold 22px Trebuchet MS,sans-serif'; ctx.textAlign = 'center'; ctx.fillStyle = '#000'; ctx.fillText(toast, VIEW_W / 2 + 1, 81); ctx.fillStyle = '#ffd23f'; ctx.fillText(toast, VIEW_W / 2, 80); ctx.textAlign = 'left'; ctx.globalAlpha = 1; }
 }
