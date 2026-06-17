@@ -12,7 +12,7 @@ const SPEED = 110, RUN_MULT = 1.8;
 const STAM_MAX = 100, STAM_DRAIN = 32, STAM_REGEN = 10, STAM_REGEN_HOME = 50;
 const ZSPEED = 48, ZCHASE = 80;
 const ZHP = 4, LOOT_CHANCE = 0.3;
-const MAX_ZOMBIES = 44, RESPAWN_EVERY = 2.2;
+const MAX_ZOMBIES = 50, RESPAWN_EVERY = 2.2;
 // some zombies are armed (different guns); each fires single shots — max 1 bullet in flight
 const ARMED_CHANCE = 0.3;
 const ZWEAPONS = [
@@ -116,7 +116,7 @@ function questSpot(minFromPlayer) {
   else quests.push({ type: 'kills', target: 12 + ri(12), label: 'Зомбі' });
 })();
 // gangs of coin-stealing bandits, scattered across the town
-for (let gi = 0; gi < 4; gi++) { const s = questSpot(420); const n = 2 + ri(3); for (let k = 0; k < n; k++) zombies.push(mkCrim(s[0] + ri(70) - 35, s[1] + ri(70) - 35)); }
+for (let gi = 0; gi < 7; gi++) { const s = questSpot(380); const n = 3 + ri(4); for (let k = 0; k < n; k++) zombies.push(mkCrim(s[0] + ri(80) - 40, s[1] + ri(80) - 40)); }
 function checkQuests() {
   let all = true;
   for (const q of quests) {
