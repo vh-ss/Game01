@@ -413,8 +413,15 @@ function update(dt) {
   if (woman && woman.active && !womanRescued && !womanDead) {
     woman.invuln = Math.max(0, woman.invuln - dt); woman.flash = Math.max(0, woman.flash - dt);
     const wcx = woman.x + woman.w / 2, wcy = woman.y + woman.h / 2, pcx2 = player.x + player.w / 2, pcy2 = player.y + player.h / 2;
-    const dd = Math.hypot(pcx2 - wcx, pcy2 - wcy);
-    if (dd > 42) { const sp = 125 * dt; tryMove(woman, (pcx2 - wcx) / dd * sp, (pcy2 - wcy) / dd * sp); woman.walkT += dt; woman.frame = 1 + (Math.floor(woman.walkT * 8) % 2); } else woman.frame = 0;
+    // if unarmed, head to the nearest dropped weapon to arm herself; otherwise stay near the player
+    let tx = pcx2, ty = pcy2, stop = 42;
+    if (woman.weapon == null && loot.length) {
+      let bl = null, bd = 300 * 300;
+      for (const a of loot) { const dx = a.x + 11 - wcx, dy = a.y + 9 - wcy, q = dx * dx + dy * dy; if (q < bd) { bd = q; bl = a; } }
+      if (bl) { tx = bl.x + 11; ty = bl.y + 9; stop = 6; }
+    }
+    const dt2 = Math.hypot(tx - wcx, ty - wcy);
+    if (dt2 > stop) { const sp = 125 * dt; tryMove(woman, (tx - wcx) / dt2 * sp, (ty - wcy) / dt2 * sp); woman.walkT += dt; woman.frame = 1 + (Math.floor(woman.walkT * 8) % 2); } else woman.frame = 0;
     // she shoots back if she has picked up a weapon
     if (woman.weapon != null) {
       woman.fireCD -= dt;
