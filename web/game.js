@@ -56,7 +56,11 @@ function mkZombie(x, y) {
     armed, zw: armed ? Math.floor(Math.random() * ZWEAPONS.length) : 0,
     shootCD: 0.6 + Math.random() * 2, hasBullet: false, aimx: 1, aimy: 0 };
 }
-function mkCrim(x, y) { return { x, y, w: 18, h: 22, vx: 0, vy: 0, t: 0, hp: 5, flash: 0, frame: 0, crim: true, carrying: 0, stealCD: 0 }; }
+function mkCrim(x, y) {
+  const armed = Math.random() < 0.35;
+  return { x, y, w: 18, h: 22, vx: 0, vy: 0, t: 0, hp: 5, flash: 0, frame: 0, crim: true, carrying: 0, stealCD: 0, fleeT: 0, stolenWeapon: null,
+    armed, zw: armed ? Math.floor(Math.random() * ZWEAPONS.length) : 0, shootCD: 0.8 + Math.random() * 1.5, hasBullet: false, aimx: 1, aimy: 0 };
+}
 let coins = LEVEL.coins.map(([x, y]) => ({ x, y }));
 const homes = LEVEL.homes.map(([x, y]) => ({ x, y }));
 const houseImgs = [IMG.house1, IMG.house2, IMG.house3];
@@ -246,7 +250,8 @@ function deathFx(z) {
   else if (z.crim) {
     spawnBurst(z.x + 9, z.y + 11, '#c0392b', 14, 160, 3);
     for (let k = 0; k < (z.carrying || 0); k++) coins.push({ x: z.x + Math.random() * 22 - 11, y: z.y + Math.random() * 22 - 11 });   // drop stolen coins
-    if (z.carrying > 0) showToast('Монети повернуто! 💰');
+    if (z.stolenWeapon != null) loot.push({ x: z.x, y: z.y, w: 22, h: 18, weapon: z.stolenWeapon });   // drop stolen weapon
+    if (z.carrying > 0 || z.stolenWeapon != null) showToast('Здобич повернуто! 💰');
   }
   else spawnBurst(z.x + 9, z.y + 11, '#8ec257', 16, 170, 3);
   spawnBurst(z.x + 9, z.y + 11, '#ffffff', 6, 120, 2); dropLoot(z); kills++; AUDIO.sfx.zombie();
@@ -337,12 +342,13 @@ function update(dt) {
   // zombies + bandits (roam + chase)
   for (const z of zombies) {
     z.flash = Math.max(0, z.flash - dt);
-    if (z.crim) z.stealCD = Math.max(0, z.stealCD - dt);
+    if (z.crim) { z.stealCD = Math.max(0, z.stealCD - dt); z.fleeT = Math.max(0, z.fleeT - dt); }
     z.frame = 1 + (Math.floor(animClock * 8 + z.x * 0.05) % 2);
     const zx = z.x + z.w / 2, zy = z.y + z.h / 2, px = player.x + player.w / 2, py = player.y + player.h / 2;
     const d = Math.hypot(px - zx, py - zy);
     const chaseR = z.crim ? 300 : 220, spd = z.crim ? ZCHASE * 1.15 : ZCHASE;   // bandits are a bit faster
-    if (d < chaseR) { const m = d || 1; z.vx = (px - zx) / m * spd; z.vy = (py - zy) / m * spd; }
+    if (z.crim && z.fleeT > 0) { const m = d || 1; z.vx = (zx - px) / m * spd * 1.3; z.vy = (zy - py) / m * spd * 1.3; }  // run away after a theft
+    else if (d < chaseR) { const m = d || 1; z.vx = (px - zx) / m * spd; z.vy = (py - zy) / m * spd; }
     else { z.t -= dt; if (z.t <= 0) pickDir(z); }
     tryMove(z, z.vx * dt, z.vy * dt);
     // armed zombies fire single shots at the player (max 1 bullet each in flight)
@@ -355,8 +361,17 @@ function update(dt) {
       }
     }
     if (aabb(player.x, player.y, player.w, player.h, z.x, z.y, z.w, z.h)) {
-      if (z.crim) { if (z.stealCD <= 0) { if (totalCoins > 0) { totalCoins--; z.carrying++; showToast('Бандит вкрав монету! 💰'); } hurt(8); z.stealCD = 1.0; } }
-      else hurt(16);
+      if (z.crim) {
+        if (z.stealCD <= 0 && z.fleeT <= 0) {
+          let stole = false;
+          const stealable = [2, 3, 4, 5].filter(i => owned[i]);   // only non-starter guns can be grabbed
+          if (z.stolenWeapon == null && stealable.length && Math.random() < 0.3) {
+            const wi = stealable[Math.floor(Math.random() * stealable.length)];
+            owned[wi] = false; z.stolenWeapon = wi; if (curW === wi) curW = 1; showToast('Бандит вкрав зброю: ' + WEAPONS[wi].name + '!'); stole = true;
+          } else if (totalCoins > 0) { totalCoins--; z.carrying++; showToast('Бандит вкрав монету! 💰'); stole = true; }
+          hurt(8); z.stealCD = 1.0; if (stole) z.fleeT = 4.0;       // flee after a successful theft
+        }
+      } else hurt(16);
     }
   }
 
