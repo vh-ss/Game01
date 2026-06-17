@@ -75,7 +75,7 @@ let coins = LEVEL.coins.map(([x, y]) => ({ x, y }));
 const homes = LEVEL.homes.map(([x, y]) => ({ x, y }));
 const houseImgs = [IMG.house1, IMG.house2, IMG.house3];
 let hs = 9; const h3 = () => (hs = (hs * 1103515245 + 12345) & 0x7fffffff) % 3;
-const houses = LEVEL.houses.map(([x, y]) => ({ x, y, img: houseImgs[h3()] }));
+const houses = LEVEL.houses.map(([x, y]) => ({ x, y, img: houseImgs[h3()], fire: 0, burnT: 0 }));
 
 // reachability mask (only tiles the player can actually walk to)
 const reach = Array.from({ length: ROWS }, () => new Array(COLS).fill(false));
@@ -92,9 +92,9 @@ for (const h of houses) {
   if (r >= 0 && r < ROWS && c >= 0 && c < COLS && reachable(c, r) && ar() < 0.5) ammoCrates.push({ x: c * TS + 6, y: r * TS + 6, w: 20, h: 20 });
 }
 // wrecked cars (decoration) + extra coins stashed in houses & by cars
-const cars = LEVEL.cars || [];
+const cars = (LEVEL.cars || []).map(([x, y]) => ({ x, y, fire: 0, burnT: 0 }));
 for (const h of houses) { const c = Math.floor((h.x + 48) / TS), r = Math.floor((h.y + 84) / TS); if (r >= 0 && r < ROWS && c >= 0 && c < COLS && reachable(c, r) && ar() < 0.55) coins.push({ x: c * TS + 16, y: r * TS + 16 }); }
-for (const cr of cars) { if (ar() < 0.6) coins.push({ x: cr[0] + 22, y: cr[1] + 12 }); }
+for (const cr of cars) { if (ar() < 0.6) coins.push({ x: cr.x + 22, y: cr.y + 12 }); }
 
 let health = 100, lives = 3, totalCoins = 0, kills = 0, state = 'title', stamina = STAM_MAX, animClock = 0, respawnT = RESPAWN_EVERY;
 let endShown = false;
@@ -118,7 +118,7 @@ function questSpot(minFromPlayer) {
 (function buildCampaign() {
   const ks = questSpot(640); keyItem = { x: ks[0] + 6, y: ks[1] + 6, got: false };
   quests.push({ type: 'key', label: 'Знайти ключ' });
-  const hsp = questSpot(900); lockedHouse = { x: hsp[0], y: hsp[1] };
+  const hsp = questSpot(900); lockedHouse = { x: hsp[0], y: hsp[1], fire: 0, burnT: 0 };
   woman = { x: hsp[0] + 38, y: hsp[1] + 60, w: 18, h: 22, hp: 40, maxhp: 40, flash: 0, invuln: 0, frame: 0, walkT: 0, active: false, weapon: null, ammo: 0, fireCD: 0, aimx: 1, aimy: 0 };
   quests.push({ type: 'rescue', label: 'Врятувати жінку' });
   const bs = questSpot(700); boss = mkZombie(bs[0], bs[1]); boss.isBoss = true; boss.hp = 24; boss.maxhp = 24; boss.w = 30; boss.h = 34; boss.name = BOSS_NAMES[ri(BOSS_NAMES.length)]; boss.armed = true; boss.zw = 1; zombies.push(boss);
@@ -302,6 +302,11 @@ function fire(dx, dy) {
     wAmmo[curW]--;
     for (let i = 0; i < 3; i++) { const a = Math.atan2(dy, dx) + (Math.random() - 0.5) * w.spread, s = 150 + Math.random() * 130; particles.push({ x: px + dx * 10, y: py + dy * 10, vx: Math.cos(a) * s, vy: Math.sin(a) * s, life: 0.3 + Math.random() * 0.25, max: 0.55, color: ['#ff7a1a', '#ffd23f', '#ff4a1a'][i % 3], size: 4 + Math.random() * 3, grav: 0 }); }
     for (const z of zombies) { if (z.dead || z.hidden) continue; const zx = z.x + z.w / 2 - px, zy = z.y + z.h / 2 - py, d = Math.hypot(zx, zy); if (d <= w.range && (zx * dx + zy * dy) / (d || 1) > 0.5) damageZombie(z, w.dmg, dx * 0.4, dy * 0.4); }
+    // ignite cars & buildings caught in the flame cone
+    const ignite = (o, ocx, ocy) => { if (!o || o.fire) return; const ox = ocx - px, oy = ocy - py, d = Math.hypot(ox, oy); if (d <= w.range + 30 && (ox * dx + oy * dy) / (d || 1) > 0.35) { o.fire = 1; o.burnT = 60 + Math.random() * 60; showToast('🔥 Підпалено!'); } };
+    for (const cr of cars) ignite(cr, cr.x + 23, cr.y + 14);
+    for (const hh of houses) ignite(hh, hh.x + 48, hh.y + 50);
+    ignite(lockedHouse, lockedHouse.x + 48, lockedHouse.y + 50);
     AUDIO.sfx.flame(); return;
   }
   // guns
@@ -523,6 +528,7 @@ function update(dt) {
   // timers + particles
   hurtFlash = Math.max(0, hurtFlash - dt * 1.5); shakeT = Math.max(0, shakeT - dt); invuln = Math.max(0, invuln - dt); toastT = Math.max(0, toastT - dt); swingFx = Math.max(0, swingFx - dt); speechT = Math.max(0, speechT - dt);
   for (let i = particles.length - 1; i >= 0; i--) { const p = particles[i]; p.vy += (p.grav || 0) * dt; p.x += p.vx * dt; p.y += p.vy * dt; p.life -= dt; if (p.life <= 0) particles.splice(i, 1); }
+  updateBurn(dt);
 
   checkQuests();
 
@@ -532,6 +538,26 @@ function update(dt) {
 
 // ================= RENDER =================
 function spr(img, x, y) { ctx.drawImage(img, Math.round(x - cam.x), Math.round(y - cam.y)); }
+function updateBurn(dt) {
+  const burn = (o, cx, topY) => {
+    if (!o) return;
+    if (o.fire === 1) {
+      o.burnT -= dt; if (o.burnT <= 0) { o.fire = 2; return; }
+      if (Math.random() < 0.6) particles.push({ x: cx + Math.random() * 22 - 11, y: topY + Math.random() * 10, vx: Math.random() * 18 - 9, vy: -42 - Math.random() * 40, life: 0.4 + Math.random() * 0.3, max: 0.7, color: ['#ff7a1a', '#ffd23f', '#ff4a1a'][Math.floor(Math.random() * 3)], size: 4 + Math.random() * 3, grav: -20 });
+      if (Math.random() < 0.5) particles.push({ x: cx + Math.random() * 26 - 13, y: topY - 6, vx: Math.random() * 12 - 6, vy: -26 - Math.random() * 18, life: 1.2 + Math.random() * 0.8, max: 2.0, color: 'rgba(55,55,55,0.5)', size: 6 + Math.random() * 5, grav: -8 });
+    } else if (o.fire === 2 && Math.random() < 0.012) {
+      particles.push({ x: cx + Math.random() * 16 - 8, y: topY - 4, vx: Math.random() * 8 - 4, vy: -18, life: 1.6, max: 1.6, color: 'rgba(80,80,80,0.32)', size: 5, grav: -6 });
+    }
+  };
+  for (const cr of cars) burn(cr, cr.x + 23, cr.y + 4);
+  for (const hh of houses) burn(hh, hh.x + 48, hh.y + 22);
+  burn(lockedHouse, lockedHouse && lockedHouse.x + 48, lockedHouse && lockedHouse.y + 22);
+}
+function burnLook(o, sx, sy, w, h) {
+  if (!o) return;
+  if (o.fire === 2) { ctx.fillStyle = 'rgba(16,12,9,0.74)'; ctx.fillRect(sx, sy + h * 0.25, w, h * 0.75); }   // charred
+  else if (o.fire === 1) { ctx.save(); ctx.globalCompositeOperation = 'lighter'; const fl = 0.5 + 0.5 * Math.sin(animClock * 12 + sx); ctx.fillStyle = 'rgba(255,120,30,' + (0.22 + 0.2 * fl).toFixed(2) + ')'; ctx.fillRect(sx, sy + h * 0.3, w, h * 0.7); ctx.restore(); }
+}
 function drawBush(b) {
   const x = b.x - cam.x, y = b.y - cam.y;
   if (x < -40 || x > VIEW_W + 40 || y < -40 || y > VIEW_H + 40) return;
@@ -592,9 +618,9 @@ function draw() {
   const r0 = Math.max(0, Math.floor(cam.y / TS)), r1 = Math.min(ROWS - 1, Math.floor((cam.y + VIEW_H) / TS));
   for (let r = r0; r <= r1; r++) for (let c = c0; c <= c1; c++) paintTile(tileIdx[r][c], Math.floor(c * TS - cam.x), Math.floor(r * TS - cam.y), c, r);
 
-  for (const cr of cars) spr(IMG.car, cr[0], cr[1]);
+  for (const cr of cars) { spr(IMG.car, cr.x, cr.y); if (cr.fire) burnLook(cr, Math.round(cr.x - cam.x), Math.round(cr.y - cam.y), 46, 28); }
   for (const b of bushes) drawBush(b);
-  for (const h of houses) spr(h.img, h.x, h.y);
+  for (const h of houses) { spr(h.img, h.x, h.y); if (h.fire) burnLook(h, Math.round(h.x - cam.x), Math.round(h.y - cam.y), 96, 96); }
   for (const hm of homes) spr(IMG.home, hm.x, hm.y - 32);
   for (const co of coins) spr(IMG.coin, co.x - 10, co.y - 10 + Math.sin(animClock * 3 + co.x) * 2);
   for (const a of ammoCrates) spr(IMG.ammo, a.x, a.y + Math.sin(animClock * 3 + a.x) * 1.5);
@@ -603,6 +629,7 @@ function draw() {
   // locked house (where the woman is held) — house + padlock until freed
   if (lockedHouse) {
     spr(IMG.house1, lockedHouse.x, lockedHouse.y);
+    if (lockedHouse.fire) burnLook(lockedHouse, Math.round(lockedHouse.x - cam.x), Math.round(lockedHouse.y - cam.y), 96, 96);
     if (!womanFreed) {
       const lx = Math.round(lockedHouse.x + 48 - cam.x), ly = Math.round(lockedHouse.y + 50 - cam.y);
       const pulse = 0.5 + 0.5 * Math.sin(animClock * 4);
