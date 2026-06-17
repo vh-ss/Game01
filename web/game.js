@@ -147,7 +147,7 @@ const bullets = [], eBullets = [], loot = [], particles = [];
 let fireCD = 0, hurtFlash = 0, shakeT = 0, invuln = 0, hitCD = 0, healT = 0, dustT = 0, shareCD = 0;
 let toast = '', toastT = 0, speech = '', speechT = 0; const face = { x: 1, y: 0 };
 function say(t) { speech = t; speechT = 4.5; }
-let questsCollapsed = false; const questPanel = { x: 8, y: 44, w: 200, h: 26 };
+let questsCollapsed = false; const questPanel = { x: 10, y: 66, w: 210, h: 26 };
 const inQuestPanel = (x, y) => x >= questPanel.x && x <= questPanel.x + questPanel.w && y >= questPanel.y && y <= questPanel.y + questPanel.h;
 const cam = { x: 0, y: 0 };
 const clamp = (v, lo, hi) => v < lo ? lo : v > hi ? hi : v;
@@ -811,28 +811,32 @@ function drawSpeech() {
   ctx.globalAlpha = 1;
 }
 
+function panel(x, y, w, h) { ctx.fillStyle = 'rgba(18,30,22,0.84)'; rr(x, y, w, h, 12); ctx.fill(); ctx.strokeStyle = 'rgba(0,0,0,.35)'; ctx.lineWidth = 1.5; rr(x, y, w, h, 12); ctx.stroke(); }
 function drawHUD() {
-  ctx.fillStyle = 'rgba(20,40,28,0.72)'; rr(8, 6, VIEW_W - 16, 36, 12); ctx.fill();   // rounded ForestQuest-style panel
-  // health + stamina — identical size bars
+  ctx.textBaseline = 'middle'; ctx.textAlign = 'left';
+  // --- vitals panel (top-left) ---
+  panel(10, 8, 216, 52);
   ctx.lineWidth = 2; ctx.strokeStyle = 'rgba(0,0,0,.35)';
-  rr(14, 8, 190, 10, 5); ctx.stroke();
-  ctx.fillStyle = health > 60 ? '#7CFC68' : health > 30 ? '#ffd23f' : '#ff6f6f'; rr(15, 9, health / 100 * 188, 8, 4); ctx.fill();
-  ctx.strokeStyle = 'rgba(0,0,0,.35)'; rr(14, 23, 190, 9, 4); ctx.stroke();
-  ctx.fillStyle = stamina > 25 ? '#56b8ff' : '#c46bff'; rr(15, 24, stamina / 100 * 188, 7, 3); ctx.fill();
-  ctx.textBaseline = 'middle'; ctx.fillStyle = '#ff9aa2'; ctx.font = 'bold 18px Trebuchet MS,sans-serif';
-  ctx.fillText('♥' + lives, 214, 18);
-  // current weapon: icon + name + ammo (∞ for the bat)
+  rr(20, 17, 150, 12, 6); ctx.stroke();
+  ctx.fillStyle = health > 60 ? '#7CFC68' : health > 30 ? '#ffd23f' : '#ff6f6f'; rr(21, 18, health / 100 * 148, 10, 5); ctx.fill();
+  ctx.strokeStyle = 'rgba(0,0,0,.35)'; rr(20, 35, 150, 10, 5); ctx.stroke();
+  ctx.fillStyle = stamina > 25 ? '#56b8ff' : '#c46bff'; rr(21, 36, stamina / 100 * 148, 8, 4); ctx.fill();
+  ctx.fillStyle = '#ff9aa2'; ctx.font = 'bold 20px Trebuchet MS,sans-serif'; ctx.fillText('♥' + lives, 180, 32);
+  // --- weapon panel ---
   const w = WEAPONS[curW];
-  ctx.drawImage(IMG.wicon[curW], 248, 8, 26, 26);
-  ctx.textAlign = 'left'; ctx.font = 'bold 14px Trebuchet MS,sans-serif'; ctx.fillStyle = '#fff'; ctx.fillText(w.name, 278, 14);
-  ctx.fillStyle = wAmmo[curW] > 0 ? '#ffd23f' : '#ff7a7a'; ctx.font = 'bold 13px Trebuchet MS,sans-serif';
-  ctx.fillText(w.mag === Infinity ? '⦿ ∞' : ('⦿ ' + wAmmo[curW] + '/' + w.mag), 278, 30);
-  if (w.mag !== Infinity) for (let m = 0; m < MAX_MAGS; m++) { ctx.fillStyle = m < reserve[curW] ? '#ffd23f' : 'rgba(255,255,255,0.18)'; ctx.fillRect(362 + m * 9, 26, 7, 7); }
-  // coins + kills
-  ctx.drawImage(IMG.coin, VIEW_W - 104, 2, 22, 22);
-  ctx.textAlign = 'left'; ctx.font = 'bold 18px Trebuchet MS,sans-serif'; ctx.fillStyle = '#ffd23f'; ctx.fillText('' + totalCoins, VIEW_W - 80, 14);
-  ctx.textAlign = 'right'; ctx.font = 'bold 13px Trebuchet MS,sans-serif'; ctx.fillStyle = '#9bf09b'; ctx.fillText('☠ ' + kills, VIEW_W - 14, 30); ctx.textAlign = 'left';
-  if (toastT > 0) { ctx.globalAlpha = Math.min(1, toastT); ctx.font = 'bold 22px Trebuchet MS,sans-serif'; ctx.textAlign = 'center'; ctx.fillStyle = '#fff'; ctx.fillText(toast, VIEW_W / 2 + 1, 71); ctx.fillStyle = '#e8932a'; ctx.fillText(toast, VIEW_W / 2, 70); ctx.textAlign = 'left'; ctx.globalAlpha = 1; }
+  panel(234, 8, 212, 52);
+  ctx.drawImage(IMG.wicon[curW], 242, 18, 32, 32);
+  ctx.fillStyle = '#fff'; ctx.font = 'bold 15px Trebuchet MS,sans-serif'; ctx.fillText(w.name, 280, 24);
+  ctx.fillStyle = wAmmo[curW] > 0 ? '#ffd23f' : '#ff7a7a'; ctx.font = 'bold 14px Trebuchet MS,sans-serif';
+  ctx.fillText(w.mag === Infinity ? '⦿ ∞' : ('⦿ ' + wAmmo[curW] + '/' + w.mag), 280, 44);
+  if (w.mag !== Infinity) for (let m = 0; m < MAX_MAGS; m++) { ctx.fillStyle = m < reserve[curW] ? '#ffd23f' : 'rgba(255,255,255,0.18)'; ctx.fillRect(376 + m * 10, 40, 8, 8); }
+  // --- score panel (top-right) ---
+  const sx = VIEW_W - 166;
+  panel(sx, 8, 156, 52);
+  ctx.drawImage(IMG.coin, sx + 10, 14, 26, 26); ctx.fillStyle = '#ffd23f'; ctx.font = 'bold 22px Trebuchet MS,sans-serif'; ctx.fillText('' + totalCoins, sx + 42, 24);
+  ctx.fillStyle = '#9bf09b'; ctx.font = 'bold 17px Trebuchet MS,sans-serif'; ctx.fillText('☠ ' + kills, sx + 42, 45);
+  // toast
+  if (toastT > 0) { ctx.globalAlpha = Math.min(1, toastT); ctx.font = 'bold 22px Trebuchet MS,sans-serif'; ctx.textAlign = 'center'; ctx.fillStyle = '#000'; ctx.fillText(toast, VIEW_W / 2 + 1, 81); ctx.fillStyle = '#ffd23f'; ctx.fillText(toast, VIEW_W / 2, 80); ctx.textAlign = 'left'; ctx.globalAlpha = 1; }
 }
 
 function drawOverlay() {
