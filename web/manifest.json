@@ -1,0 +1,11 @@
+{
+  "name": "Панк-Місто",
+  "short_name": "Панк-Місто",
+  "description": "Топ-даун шутер про зомбі-апокаліпсис",
+  "display": "fullscreen",
+  "orientation": "landscape",
+  "background_color": "#0d0f0c",
+  "theme_color": "#0d0f0c",
+  "start_url": "./",
+  "scope": "./"
+}
