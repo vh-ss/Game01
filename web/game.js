@@ -129,6 +129,25 @@ function questSpot(minFromPlayer) {
 })();
 // gangs of coin-stealing bandits, scattered across the town
 for (let gi = 0; gi < 7; gi++) { const s = questSpot(380); const n = 3 + ri(4); for (let k = 0; k < n; k++) zombies.push(mkCrim(s[0] + ri(80) - 40, s[1] + ri(80) - 40)); }
+
+// bushes (decor) — some hide an ambush gang that springs out when you get close
+const bushes = [];
+{
+  const cells = reachCells.slice();
+  for (let i = cells.length - 1; i > 0; i--) { const j = Math.floor(Math.random() * (i + 1)); [cells[i], cells[j]] = [cells[j], cells[i]]; }
+  let ambushes = 0;
+  for (const [c, r] of cells) {
+    if (tileIdx[r][c] !== 0) continue;                                   // bushes only on grass
+    const wx = c * TS + 16, wy = r * TS + 16;
+    if (Math.hypot(wx - player.x, wy - player.y) < 220) continue;
+    if (bushes.some(b => Math.abs(b.x - wx) < 64 && Math.abs(b.y - wy) < 64)) continue;
+    const ambush = ambushes < 6;
+    const bush = { x: wx, y: wy, ambush, triggered: false, members: [] };
+    if (ambush) { const n = 2 + Math.floor(Math.random() * 4); for (let k = 0; k < n; k++) { const z = mkCrim(wx + Math.random() * 26 - 13, wy + Math.random() * 26 - 13); z.hidden = true; zombies.push(z); bush.members.push(z); } ambushes++; }
+    bushes.push(bush);
+    if (bushes.length >= 34) break;
+  }
+}
 function checkQuests() {
   let all = true;
   for (const q of quests) {
@@ -202,7 +221,7 @@ const weaponSlotRect = i => ({ x: (VIEW_W - WBARW) / 2 + i * (WSLOT + WGAP), y: 
 function weaponSlotAt(px, py) { for (let i = 0; i < WEAPONS.length; i++) { const r = weaponSlotRect(i); if (px >= r.x && px <= r.x + r.w && py >= r.y && py <= r.y + r.h) return i; } return -1; }
 function autoAim() {
   const px = player.x + player.w / 2, py = player.y + player.h / 2; let best = null, bd = 520 * 520;
-  for (const z of zombies) { const dx = z.x + z.w / 2 - px, dy = z.y + z.h / 2 - py, d = dx * dx + dy * dy; if (d < bd) { bd = d; best = [dx, dy]; } }
+  for (const z of zombies) { if (z.hidden) continue; const dx = z.x + z.w / 2 - px, dy = z.y + z.h / 2 - py, d = dx * dx + dy * dy; if (d < bd) { bd = d; best = [dx, dy]; } }
   if (best) { const m = Math.hypot(best[0], best[1]) || 1; return { x: best[0] / m, y: best[1] / m }; }
   return { x: face.x, y: face.y };
 }
@@ -276,13 +295,13 @@ function fire(dx, dy) {
   const px = player.x + player.w / 2, py = player.y + player.h / 2;
   if (w.type === 'melee') {              // bat — short-range swing, no ammo
     swingFx = 0.16; swingAng = Math.atan2(dy, dx); shakeT = Math.max(shakeT, 0.05);
-    for (const z of zombies) { if (z.dead) continue; const zx = z.x + z.w / 2 - px, zy = z.y + z.h / 2 - py, d = Math.hypot(zx, zy); if (d <= w.range + 12 && (zx * dx + zy * dy) / (d || 1) > 0.1) damageZombie(z, w.dmg, dx, dy); }
+    for (const z of zombies) { if (z.dead || z.hidden) continue; const zx = z.x + z.w / 2 - px, zy = z.y + z.h / 2 - py, d = Math.hypot(zx, zy); if (d <= w.range + 12 && (zx * dx + zy * dy) / (d || 1) > 0.1) damageZombie(z, w.dmg, dx, dy); }
     AUDIO.sfx.melee(); return;
   }
   if (w.type === 'flame') {              // flamethrower — short cone, burns fuel
     wAmmo[curW]--;
     for (let i = 0; i < 3; i++) { const a = Math.atan2(dy, dx) + (Math.random() - 0.5) * w.spread, s = 150 + Math.random() * 130; particles.push({ x: px + dx * 10, y: py + dy * 10, vx: Math.cos(a) * s, vy: Math.sin(a) * s, life: 0.3 + Math.random() * 0.25, max: 0.55, color: ['#ff7a1a', '#ffd23f', '#ff4a1a'][i % 3], size: 4 + Math.random() * 3, grav: 0 }); }
-    for (const z of zombies) { if (z.dead) continue; const zx = z.x + z.w / 2 - px, zy = z.y + z.h / 2 - py, d = Math.hypot(zx, zy); if (d <= w.range && (zx * dx + zy * dy) / (d || 1) > 0.5) damageZombie(z, w.dmg, dx * 0.4, dy * 0.4); }
+    for (const z of zombies) { if (z.dead || z.hidden) continue; const zx = z.x + z.w / 2 - px, zy = z.y + z.h / 2 - py, d = Math.hypot(zx, zy); if (d <= w.range && (zx * dx + zy * dy) / (d || 1) > 0.5) damageZombie(z, w.dmg, dx * 0.4, dy * 0.4); }
     AUDIO.sfx.flame(); return;
   }
   // guns
@@ -296,7 +315,7 @@ function womanFire(wx, wy, dx, dy) {
   const w = WEAPONS[woman.weapon];
   if (w.type === 'flame') {
     for (let i = 0; i < 3; i++) { const a = Math.atan2(dy, dx) + (Math.random() - 0.5) * w.spread, s = 150 + Math.random() * 120; particles.push({ x: wx + dx * 8, y: wy + dy * 8, vx: Math.cos(a) * s, vy: Math.sin(a) * s, life: 0.3 + Math.random() * 0.2, max: 0.5, color: ['#ff7a1a', '#ffd23f', '#ff4a1a'][i % 3], size: 4, grav: 0 }); }
-    for (const z of zombies) { if (z.dead) continue; const zx = z.x + z.w / 2 - wx, zy = z.y + z.h / 2 - wy, d = Math.hypot(zx, zy); if (d <= w.range && (zx * dx + zy * dy) / (d || 1) > 0.5) damageZombie(z, w.dmg, dx * 0.3, dy * 0.3); }
+    for (const z of zombies) { if (z.dead || z.hidden) continue; const zx = z.x + z.w / 2 - wx, zy = z.y + z.h / 2 - wy, d = Math.hypot(zx, zy); if (d <= w.range && (zx * dx + zy * dy) / (d || 1) > 0.5) damageZombie(z, w.dmg, dx * 0.3, dy * 0.3); }
     return;
   }
   const base = Math.atan2(dy, dx);
@@ -354,7 +373,7 @@ function update(dt) {
   for (let i = bullets.length - 1; i >= 0; i--) {
     const b = bullets[i]; b.x += b.vx * dt; b.y += b.vy * dt; b.life -= dt;
     if (b.life <= 0 || boxSolid(b.x - 1, b.y - 1, 2, 2) || b.x < 0 || b.x > LW || b.y < 0 || b.y > LH) { bullets.splice(i, 1); continue; }
-    for (let j = zombies.length - 1; j >= 0; j--) { const z = zombies[j]; if (!z.dead && b.x >= z.x && b.x <= z.x + z.w && b.y >= z.y && b.y <= z.y + z.h) {
+    for (let j = zombies.length - 1; j >= 0; j--) { const z = zombies[j]; if (!z.dead && !z.hidden && b.x >= z.x && b.x <= z.x + z.w && b.y >= z.y && b.y <= z.y + z.h) {
       damageZombie(z, b.dmg, Math.sign(b.vx), Math.sign(b.vy));
       if (!z.dead) spawnBurst(b.x, b.y, '#8ec257', 5, 80, 2);
       bullets.splice(i, 1); break;
@@ -365,8 +384,18 @@ function update(dt) {
   // zombie respawn (keeps the town populated)
   respawnT -= dt; if (respawnT <= 0) { respawnT = RESPAWN_EVERY; respawnZombie(); }
 
+  // ambush bushes — spring the hidden gang when the player gets close
+  for (const b of bushes) {
+    if (b.ambush && !b.triggered && Math.hypot(player.x + 9 - b.x, player.y + 11 - b.y) < 135) {
+      b.triggered = true; for (const m of b.members) m.hidden = false;
+      spawnBurst(b.x, b.y, '#46522c', 20, 170, 3); spawnBurst(b.x, b.y, '#6a8f3a', 10, 120, 2);
+      shakeT = Math.max(shakeT, 0.14); showToast('Засідка! 🌿'); AUDIO.sfx.melee();
+    }
+  }
+
   // zombies + bandits (roam + chase)
   for (const z of zombies) {
+    if (z.hidden) continue;                                  // bandits lying in ambush
     z.flash = Math.max(0, z.flash - dt);
     if (z.crim) { z.stealCD = Math.max(0, z.stealCD - dt); z.fleeT = Math.max(0, z.fleeT - dt); }
     z.frame = 1 + (Math.floor(animClock * 8 + z.x * 0.05) % 2);
@@ -455,7 +484,7 @@ function update(dt) {
     if (woman.weapon != null && woman.ammo > 0) {
       woman.fireCD -= dt;
       let best = null, bd = 320 * 320;
-      for (const z of zombies) { if (z.dead) continue; const dx = z.x + z.w / 2 - wcx, dy = z.y + z.h / 2 - wcy, q = dx * dx + dy * dy; if (q < bd) { bd = q; best = [dx, dy]; } }
+      for (const z of zombies) { if (z.dead || z.hidden) continue; const dx = z.x + z.w / 2 - wcx, dy = z.y + z.h / 2 - wcy, q = dx * dx + dy * dy; if (q < bd) { bd = q; best = [dx, dy]; } }
       if (best) { const m = Math.hypot(best[0], best[1]) || 1; woman.aimx = best[0] / m; woman.aimy = best[1] / m; if (woman.fireCD <= 0) { womanFire(wcx, wcy, woman.aimx, woman.aimy); woman.fireCD = WEAPONS[woman.weapon].rate; woman.ammo--; } }
     }
     // share ammo when standing close together (whoever is empty gets a hand)
@@ -468,7 +497,7 @@ function update(dt) {
         const give = Math.min(Math.floor(woman.ammo / 2), 20); woman.ammo -= give; wAmmo[curW] = Math.min(WEAPONS[curW].mag, wAmmo[curW] + give); shareCD = 1.2; showToast('Жінка поділилась набоями 🤝');
       }
     }
-    for (const z of zombies) if (woman.invuln <= 0 && aabb(woman.x, woman.y, woman.w, woman.h, z.x, z.y, z.w, z.h)) { woman.hp -= 14; woman.invuln = 0.6; woman.flash = 0.14; spawnBurst(wcx, wcy, '#e0518f', 6, 90, 2); break; }
+    for (const z of zombies) if (!z.hidden && woman.invuln <= 0 && aabb(woman.x, woman.y, woman.w, woman.h, z.x, z.y, z.w, z.h)) { woman.hp -= 14; woman.invuln = 0.6; woman.flash = 0.14; spawnBurst(wcx, wcy, '#e0518f', 6, 90, 2); break; }
     if (woman.hp <= 0) { womanDead = true; state = 'gameover'; failReason = 'Жінку вбили — місію провалено'; AUDIO.stopMusic(); AUDIO.sfx.lose(); }
     for (const hm of homes) if (aabb(woman.x, woman.y, woman.w, woman.h, hm.x - 16, hm.y - 40, 128, 112)) { womanRescued = true; woman.active = false; spawnBurst(woman.x + 9, woman.y + 11, '#7dff9a', 16, 130, 3); say('Я вдома! Дякую, що врятував мене! 💚'); AUDIO.sfx.win(); }
   }
@@ -503,6 +532,15 @@ function update(dt) {
 
 // ================= RENDER =================
 function spr(img, x, y) { ctx.drawImage(img, Math.round(x - cam.x), Math.round(y - cam.y)); }
+function drawBush(b) {
+  const x = b.x - cam.x, y = b.y - cam.y;
+  if (x < -40 || x > VIEW_W + 40 || y < -40 || y > VIEW_H + 40) return;
+  const sway = (b.ambush && !b.triggered) ? Math.sin(animClock * 3 + b.x) * 1.5 : 0;   // subtle rustle hint
+  ctx.fillStyle = 'rgba(0,0,0,.22)'; ctx.beginPath(); ctx.ellipse(x, y + 11, 17, 5, 0, 0, 7); ctx.fill();
+  const g = ctx.createRadialGradient(x - 4, y - 6, 3, x, y, 19); g.addColorStop(0, '#4a6a36'); g.addColorStop(1, '#2c4520'); ctx.fillStyle = g;
+  ctx.beginPath(); ctx.arc(x - 11 + sway, y, 11, 0, 7); ctx.arc(x + 11 - sway, y, 11, 0, 7); ctx.arc(x, y - 8, 13, 0, 7); ctx.fill();
+  ctx.fillStyle = 'rgba(130,160,95,.4)'; ctx.beginPath(); ctx.arc(x - 6, y - 7, 3, 0, 7); ctx.arc(x + 6, y - 4, 3, 0, 7); ctx.fill();
+}
 
 // crisp procedural apocalypse ground — drawn fresh each tile (no blurry scaled sprites)
 function thash(c, r) { let h = (c * 374761393 + r * 668265263) | 0; h = (h ^ (h >> 13)) * 1274126177; return ((h ^ (h >> 16)) >>> 0) / 4294967295; }
@@ -555,6 +593,7 @@ function draw() {
   for (let r = r0; r <= r1; r++) for (let c = c0; c <= c1; c++) paintTile(tileIdx[r][c], Math.floor(c * TS - cam.x), Math.floor(r * TS - cam.y), c, r);
 
   for (const cr of cars) spr(IMG.car, cr[0], cr[1]);
+  for (const b of bushes) drawBush(b);
   for (const h of houses) spr(h.img, h.x, h.y);
   for (const hm of homes) spr(IMG.home, hm.x, hm.y - 32);
   for (const co of coins) spr(IMG.coin, co.x - 10, co.y - 10 + Math.sin(animClock * 3 + co.x) * 2);
@@ -591,6 +630,7 @@ function draw() {
   }
 
   for (const z of zombies) {
+    if (z.hidden) continue;
     if (z.isBoss) {
       const sx = Math.round(z.x - 6 - cam.x), sy = Math.round(z.y - 14 - cam.y);
       const aura = 0.3 + 0.25 * (0.5 + 0.5 * Math.sin(animClock * 4));
