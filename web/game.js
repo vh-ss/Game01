@@ -179,6 +179,18 @@ const bushes = [];
     if (bushes.length >= 70) break;
   }
 }
+
+// driveable cars parked on roads
+const vehicles = [];
+{
+  const road = reachCells.filter(([c, r]) => tileIdx[r][c] === 7);
+  for (let i = road.length - 1; i > 0; i--) { const j = Math.floor(Math.random() * (i + 1)); [road[i], road[j]] = [road[j], road[i]]; }
+  for (const [c, r] of road) { const wx = c * TS + 16, wy = r * TS + 16; if (Math.hypot(wx - player.x, wy - player.y) < 140) continue; if (vehicles.every(v => Math.hypot(v.x - wx, v.y - wy) > 220)) { vehicles.push({ x: wx, y: wy, col: ['#6a7e8a', '#8a6a5a', '#6a8a6a', '#8a8a5a'][Math.floor(Math.random() * 4)] }); if (vehicles.length >= 6) break; } }
+}
+let driving = false, carHp = 0, nearVehicle = null;
+function enterCar(v) { driving = true; carHp = 100; player.x = v.x; player.y = v.y; const i = vehicles.indexOf(v); if (i >= 0) vehicles.splice(i, 1); showToast('🚗 За кермом! Дави ворогів'); }
+function exitCar() { if (!driving) return; driving = false; vehicles.push({ x: player.x, y: player.y, col: '#7a7a6a' }); }
+
 function checkQuests() {
   let all = true;
   for (const q of quests) {
@@ -210,6 +222,7 @@ addEventListener('keydown', e => {
   if (['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight', 'Space'].includes(e.code)) e.preventDefault();
   if (state === 'title' && (e.code === 'Space' || e.code === 'Enter')) startGame();
   else if ((state === 'win' || state === 'gameover') && e.code === 'KeyR') location.reload();
+  else if (e.code === 'KeyE' && state === 'play') { if (driving) exitCar(); else if (nearVehicle) enterCar(nearVehicle); }
   else if (e.code === 'KeyB' && state === 'play' && nearHome) { state = 'shop'; }
   else if ((e.code === 'KeyB' || e.code === 'Escape') && state === 'shop') { state = 'play'; }
   else if (e.code === 'Escape' && state === 'play') { state = 'paused'; AUDIO.stopMusic(); }
@@ -250,6 +263,7 @@ const tFire = { id: null, active: false };
 const fireBtn = { r: 54, get x() { return VIEW_W - 86; }, get y() { return VIEW_H - 86; } };   // big round fire button (bottom-right)
 const btnPause = { y: 48, w: 40, h: 32, get x() { return VIEW_W - 50; } };
 const btnShop = { x: 10, y: 100, w: 120, h: 34 };   // appears near home on mobile
+const btnCar = { x: 10, y: 140, w: 130, h: 34 };    // appears near a car / when driving
 const inBtn = (b, x, y) => x >= b.x && x <= b.x + b.w && y >= b.y && y <= b.y + b.h;
 const inFire = (x, y) => Math.hypot(x - fireBtn.x, y - fireBtn.y) <= fireBtn.r + 12;
 // weapon selector bar (bottom-centre) — tap/click an icon to equip
@@ -275,6 +289,7 @@ canvas.addEventListener('touchstart', e => {
     if (inBtn(btnPause, x, y)) { if (state === 'play') { state = 'paused'; AUDIO.stopMusic(); } else if (state === 'paused') { state = 'play'; AUDIO.startMusic(); } continue; }
     if (state !== 'play') continue;
     if (nearHome && inBtn(btnShop, x, y)) { state = 'shop'; continue; }
+    if ((nearVehicle || driving) && inBtn(btnCar, x, y)) { if (driving) exitCar(); else enterCar(nearVehicle); continue; }
     if (inQuestPanel(x, y)) { questsCollapsed = !questsCollapsed; continue; }
     { const wi = weaponSlotAt(x, y); if (wi >= 0) { if (owned[wi]) curW = wi; continue; } }
     if (inFire(x, y) && tFire.id === null) { tFire.id = t.identifier; tFire.active = true; }
@@ -405,10 +420,12 @@ function update(dt) {
   if (moving) { face.x = ix / mag; face.y = iy / mag; }
   const running = (keys.ShiftLeft || keys.ShiftRight || (tMove.active && mag > 0.92)) && stamina > 0 && moving;
   const onSand = tileAt(player.x + player.w / 2, player.y + player.h / 2) === 3;
-  const sp = SPEED * spdMul * (running ? RUN_MULT : 1) * (onSand ? 0.5 : 1) * dt;
+  const sp = (driving ? 245 : SPEED * spdMul * (running ? RUN_MULT : 1) * (onSand ? 0.5 : 1)) * dt;
   let mvx = ix, mvy = iy; if (mag > 1) { mvx = ix / mag; mvy = iy / mag; }
   tryMove(player, mvx * sp, mvy * sp);
   if (moving) { player.walkT += dt * (running ? 1.5 : 1); player.frame = 1 + (Math.floor(player.walkT * 9) % 2); } else { player.frame = 0; }
+  // nearest mountable vehicle
+  nearVehicle = null; if (!driving) { let bd = 46 * 46; for (const v of vehicles) { const d = (v.x - player.x - 9) ** 2 + (v.y - player.y - 11) ** 2; if (d < bd) { bd = d; nearVehicle = v; } } }
 
   // dust on sand
   dustT -= dt;
@@ -487,7 +504,8 @@ function update(dt) {
       }
     }
     if (aabb(player.x, player.y, player.w, player.h, z.x, z.y, z.w, z.h)) {
-      if (z.crim) {
+      if (driving) { if (!z.dead) { damageZombie(z, 999, Math.sign(z.x - player.x), Math.sign(z.y - player.y)); carHp -= z.ztype === 'tank' ? 8 : 2.5; if (carHp <= 0) { exitCar(); announce('🚗 Машина розбита!'); } } }
+      else if (z.crim) {
         if (z.stealCD <= 0 && z.fleeT <= 0) {
           let stole = false;
           const stealable = [2, 3, 4, 5].filter(i => owned[i]);   // only non-starter guns can be grabbed
@@ -505,7 +523,7 @@ function update(dt) {
   for (let i = eBullets.length - 1; i >= 0; i--) {
     const b = eBullets[i]; b.x += b.vx * dt; b.y += b.vy * dt; b.life -= dt;
     let dead = b.life <= 0 || boxSolid(b.x - 1, b.y - 1, 2, 2) || b.x < 0 || b.x > LW || b.y < 0 || b.y > LH;
-    if (!dead && invuln <= 0 && aabb(player.x, player.y, player.w, player.h, b.x - 2, b.y - 2, 4, 4)) { hurt(b.dmg); dead = true; }
+    if (!dead && aabb(player.x, player.y, player.w, player.h, b.x - 2, b.y - 2, 4, 4)) { if (driving) { carHp -= b.dmg; if (carHp <= 0) { exitCar(); announce('🚗 Машина розбита!'); } } else if (invuln <= 0) hurt(b.dmg); dead = true; }
     if (dead) { if (b.owner) b.owner.hasBullet = false; eBullets.splice(i, 1); }
   }
 
@@ -616,6 +634,25 @@ function burnLook(o, sx, sy, w, h) {
   if (o.fire === 2) { ctx.fillStyle = 'rgba(16,12,9,0.74)'; ctx.fillRect(sx, sy + h * 0.25, w, h * 0.75); }   // charred
   else if (o.fire === 1) { ctx.save(); ctx.globalCompositeOperation = 'lighter'; const fl = 0.5 + 0.5 * Math.sin(animClock * 12 + sx); ctx.fillStyle = 'rgba(255,120,30,' + (0.22 + 0.2 * fl).toFixed(2) + ')'; ctx.fillRect(sx, sy + h * 0.3, w, h * 0.7); ctx.restore(); }
 }
+function drawCar(cx, cy, ang, col, sc) {
+  sc = sc || 1; const x = cx - cam.x, y = cy - cam.y;
+  ctx.save(); ctx.translate(x, y); ctx.rotate(ang); ctx.scale(sc, sc);
+  ctx.fillStyle = 'rgba(0,0,0,.25)'; ctx.beginPath(); ctx.ellipse(0, 4, 24, 11, 0, 0, 7); ctx.fill();
+  ctx.fillStyle = '#15151a'; ctx.fillRect(-18, -14, 8, 6); ctx.fillRect(-18, 8, 8, 6); ctx.fillRect(10, -14, 8, 6); ctx.fillRect(10, 8, 8, 6);
+  ctx.fillStyle = col; rr(-22, -12, 44, 24, 7); ctx.fill();
+  ctx.fillStyle = 'rgba(255,255,255,.14)'; rr(-22, -12, 44, 5, 7); ctx.fill();
+  ctx.fillStyle = '#2f3e47'; rr(-7, -10, 17, 20, 4); ctx.fill();
+  ctx.fillStyle = '#9fd0e8'; rr(9, -8, 6, 16, 2); ctx.fill();
+  ctx.fillStyle = '#ffe08a'; ctx.fillRect(20, -8, 3, 4); ctx.fillRect(20, 4, 3, 4);
+  ctx.restore();
+}
+function drawCarPrompt() {
+  ctx.fillStyle = 'rgba(20,40,28,.85)'; rr(btnCar.x, btnCar.y, btnCar.w, btnCar.h, 10); ctx.fill();
+  ctx.strokeStyle = '#9fd0e8'; ctx.lineWidth = 2; rr(btnCar.x, btnCar.y, btnCar.w, btnCar.h, 10); ctx.stroke();
+  ctx.fillStyle = '#cfeaff'; ctx.font = 'bold 15px Trebuchet MS,sans-serif'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+  ctx.fillText((driving ? '🚪 Вийти' : '🚗 Сісти') + (IS_TOUCH ? '' : ' (E)'), btnCar.x + btnCar.w / 2, btnCar.y + btnCar.h / 2);
+  ctx.textAlign = 'left'; ctx.textBaseline = 'alphabetic';
+}
 function drawBush(b) {
   const x = b.x - cam.x, y = b.y - cam.y;
   if (x < -40 || x > VIEW_W + 40 || y < -40 || y > VIEW_H + 40) return;
@@ -677,6 +714,7 @@ function draw() {
   for (let r = r0; r <= r1; r++) for (let c = c0; c <= c1; c++) paintTile(tileIdx[r][c], Math.floor(c * TS - cam.x), Math.floor(r * TS - cam.y), c, r);
 
   for (const cr of cars) { spr(IMG.car, cr.x, cr.y); if (cr.fire) burnLook(cr, Math.round(cr.x - cam.x), Math.round(cr.y - cam.y), 46, 28); }
+  for (const v of vehicles) drawCar(v.x, v.y, 0, v.col, 1);
   for (const b of bushes) drawBush(b);
   for (const h of houses) { spr(h.img, h.x, h.y); if (h.fire) burnLook(h, Math.round(h.x - cam.x), Math.round(h.y - cam.y), 96, 96); }
   for (const hm of homes) spr(IMG.home, hm.x, hm.y - 32);
@@ -751,7 +789,11 @@ function draw() {
     }
   }
 
-  if (!(invuln > 0 && Math.floor(invuln * 20) % 2 === 0)) spr(IMG.player[player.frame], player.x - 3, player.y - 8);
+  if (driving) {
+    drawCar(player.x + 9, player.y + 11, Math.atan2(face.y, face.x), '#9a3030', 1.2);
+    const hx = Math.round(player.x + 9 - 22 - cam.x), hy = Math.round(player.y - 22 - cam.y);
+    ctx.fillStyle = 'rgba(0,0,0,.55)'; ctx.fillRect(hx, hy, 44, 4); ctx.fillStyle = carHp > 30 ? '#9fd0e8' : '#ff6f6f'; ctx.fillRect(hx, hy, 44 * Math.max(0, carHp) / 100, 4);
+  } else if (!(invuln > 0 && Math.floor(invuln * 20) % 2 === 0)) spr(IMG.player[player.frame], player.x - 3, player.y - 8);
   // held weapon (gun barrel / bat + swing / flame nozzle)
   {
     const pcx = player.x + player.w / 2 - cam.x, pcy = player.y + player.h / 2 - cam.y;
@@ -784,6 +826,7 @@ function draw() {
   if (supplyMarker) drawPointer(supplyMarker.x, supplyMarker.y, '📦', '#ffe08a');
   drawHUD(); drawQuests(); drawWeaponBar(); drawSpeech();
   if (state === 'play' && nearHome) drawShopPrompt();
+  if (state === 'play' && (nearVehicle || driving)) drawCarPrompt();
   if (state === 'shop') drawShop();
   if (IS_TOUCH && (state === 'play' || state === 'paused')) drawTouchUI();
   if (state === 'paused') drawPause();
