@@ -1,6 +1,6 @@
 // Tiny synth — all sound generated live via Web Audio (no files needed).
 (function () {
-  let ac = null, master = null, musicOn = true, musicTimer = null, step = 0;
+  let ac = null, master = null, musicOn = false, musicTimer = null, step = 0;   // music off by default (toggle with M)
 
   function ctx() {
     if (!ac) {

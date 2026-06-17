@@ -361,8 +361,17 @@ function update(dt) {
     else if (d < chaseR) { const m = d || 1; z.vx = (px - zx) / m * spd; z.vy = (py - zy) / m * spd; }
     else { z.t -= dt; if (z.t <= 0) pickDir(z); }
     tryMove(z, z.vx * dt, z.vy * dt);
-    // armed zombies fire single shots at the player (max 1 bullet each in flight)
-    if (z.armed) {
+    // boss: plasma-cannon fan blast
+    if (z.isBoss) {
+      z.shootCD -= dt; const m = d || 1; z.aimx = (px - zx) / m; z.aimy = (py - zy) / m;
+      if (z.shootCD <= 0 && d < 460) {
+        const a0 = Math.atan2(z.aimy, z.aimx);
+        for (let p = -2; p <= 2; p++) { const a = a0 + p * 0.17; eBullets.push({ x: zx, y: zy, vx: Math.cos(a) * 360, vy: Math.sin(a) * 360, life: 2.2, dmg: 13, color: '#c46bff', big: true, owner: null }); }
+        z.shootCD = 1.5; shakeT = Math.max(shakeT, 0.12); AUDIO.sfx.eshoot(1);
+      }
+    }
+    // armed zombies/bandits fire single shots (max 1 bullet each in flight)
+    else if (z.armed) {
       z.shootCD -= dt; const m = d || 1; z.aimx = (px - zx) / m; z.aimy = (py - zy) / m;
       const w = ZWEAPONS[z.zw];
       if (!z.hasBullet && z.shootCD <= 0 && d < 340) {
@@ -675,7 +684,7 @@ function drawPause() {
 function drawBullets() {
   ctx.save(); ctx.globalCompositeOperation = 'lighter';
   for (const b of bullets) { const bx = b.x - cam.x, by = b.y - cam.y; const gg = ctx.createRadialGradient(bx, by, 0, bx, by, 9); gg.addColorStop(0, b.color); gg.addColorStop(1, 'rgba(0,0,0,0)'); ctx.globalAlpha = .45; ctx.fillStyle = gg; ctx.fillRect(bx - 9, by - 9, 18, 18); ctx.globalAlpha = 1; ctx.fillStyle = '#fff'; ctx.beginPath(); ctx.arc(bx, by, 2, 0, 7); ctx.fill(); }
-  for (const b of eBullets) { const bx = b.x - cam.x, by = b.y - cam.y; const gg = ctx.createRadialGradient(bx, by, 0, bx, by, 10); gg.addColorStop(0, b.color); gg.addColorStop(1, 'rgba(0,0,0,0)'); ctx.globalAlpha = .5; ctx.fillStyle = gg; ctx.fillRect(bx - 10, by - 10, 20, 20); ctx.globalAlpha = .9; ctx.strokeStyle = b.color; ctx.lineWidth = 2; ctx.beginPath(); ctx.moveTo(bx - b.vx * 0.025, by - b.vy * 0.025); ctx.lineTo(bx, by); ctx.stroke(); ctx.globalAlpha = 1; ctx.fillStyle = '#fff'; ctx.beginPath(); ctx.arc(bx, by, 1.6, 0, 7); ctx.fill(); }
+  for (const b of eBullets) { const bx = b.x - cam.x, by = b.y - cam.y; const R = b.big ? 16 : 10; const gg = ctx.createRadialGradient(bx, by, 0, bx, by, R); gg.addColorStop(0, b.color); gg.addColorStop(1, 'rgba(0,0,0,0)'); ctx.globalAlpha = .55; ctx.fillStyle = gg; ctx.fillRect(bx - R, by - R, R * 2, R * 2); ctx.globalAlpha = .9; ctx.strokeStyle = b.color; ctx.lineWidth = b.big ? 4 : 2; ctx.beginPath(); ctx.moveTo(bx - b.vx * 0.025, by - b.vy * 0.025); ctx.lineTo(bx, by); ctx.stroke(); ctx.globalAlpha = 1; ctx.fillStyle = '#fff'; ctx.beginPath(); ctx.arc(bx, by, b.big ? 2.8 : 1.6, 0, 7); ctx.fill(); }
   ctx.restore();
 }
 
