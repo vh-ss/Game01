@@ -106,6 +106,7 @@ for (const cr of cars) { if (ar() < 0.6) coins.push({ x: cr.x + 22, y: cr.y + 12
 let health = 100, lives = 3, totalCoins = 0, kills = 0, state = 'title', stamina = STAM_MAX, animClock = 0, respawnT = RESPAWN_EVERY;
 let combo = 0, comboT = 0, score = 0, coinsTotal = 0; let best = 0; try { best = +(localStorage.getItem('punktown_best') || 0); } catch (e) {}
 let dmgMul = 1, spdMul = 1, maxHealth = 100, dmgLvl = 0, spdLvl = 0, hpLvl = 0, nearHome = false;
+const DAYCYCLE = 140; let nightF = 0;   // 0 = day, 1 = deep night
 const SHOP = [
   { label: '❤ Аптечка — повне HP', cost: () => 4, buy: () => { health = maxHealth; } },
   { label: '🔫 Повний боєзапас', cost: () => 6, buy: () => { for (let i = 0; i < WEAPONS.length; i++) if (owned[i]) { wAmmo[i] = WEAPONS[i].mag; if (WEAPONS[i].mag !== Infinity) reserve[i] = MAX_MAGS; } } },
@@ -380,6 +381,7 @@ function respawnZombie() {
 // ================= UPDATE =================
 function update(dt) {
   animClock += dt;
+  nightF = (1 - Math.cos((animClock % DAYCYCLE) / DAYCYCLE * Math.PI * 2)) / 2;   // smooth day↔night
   if (state !== 'play') return;
   dt = Math.min(dt, 0.033);
 
@@ -427,7 +429,7 @@ function update(dt) {
   for (let i = zombies.length - 1; i >= 0; i--) if (zombies[i].dead) zombies.splice(i, 1);   // remove the slain
 
   // zombie respawn (keeps the town populated)
-  respawnT -= dt; if (respawnT <= 0) { respawnT = RESPAWN_EVERY; respawnZombie(); }
+  respawnT -= dt; if (respawnT <= 0) { respawnT = RESPAWN_EVERY * (1 - nightF * 0.6); respawnZombie(); if (nightF > 0.55) respawnZombie(); }   // hordes at night
 
   // ambush bushes — spring the hidden gang when the player gets close
   for (const b of bushes) {
@@ -897,6 +899,14 @@ function drawAtmosphere() {
   ctx.globalAlpha = 1;
   // soft vignette for framing
   const v = ctx.createRadialGradient(VIEW_W / 2, VIEW_H / 2, VIEW_H / 2, VIEW_W / 2, VIEW_H / 2, VIEW_W / 1.0); v.addColorStop(0, 'rgba(0,0,0,0)'); v.addColorStop(1, 'rgba(10,14,10,0.32)'); ctx.fillStyle = v; ctx.fillRect(0, 0, VIEW_W, VIEW_H);
+  // night — blue darkening + a light around the player
+  if (nightF > 0.02) {
+    ctx.fillStyle = 'rgba(10,16,38,' + (nightF * 0.52).toFixed(3) + ')'; ctx.fillRect(0, 0, VIEW_W, VIEW_H);
+    const px = player.x + 9 - cam.x, py = player.y + 11 - cam.y;
+    const lg = ctx.createRadialGradient(px, py, 40, px, py, 280);
+    lg.addColorStop(0, 'rgba(0,0,0,0)'); lg.addColorStop(1, 'rgba(4,6,16,' + (nightF * 0.5).toFixed(3) + ')');
+    ctx.fillStyle = lg; ctx.fillRect(0, 0, VIEW_W, VIEW_H);
+  }
 }
 
 function drawHomeIndicator() {
@@ -984,6 +994,12 @@ function drawHUD() {
   ctx.textAlign = 'right'; ctx.fillText('' + kills, sx + pw - 14, 41);
   ctx.textAlign = 'left'; ctx.fillStyle = '#ffe08a'; ctx.font = 'bold 15px Trebuchet MS,sans-serif'; ctx.fillText('✦', sx + 13, 60);
   ctx.textAlign = 'right'; ctx.fillText('' + score, sx + pw - 14, 60); ctx.textAlign = 'left';
+  // day/night indicator (top-centre)
+  { const ix = VIEW_W / 2, iy = 22; const night = nightF > 0.5;
+    ctx.fillStyle = night ? '#cfd6ff' : '#ffd23f'; ctx.beginPath(); ctx.arc(ix, iy, 10, 0, 7); ctx.fill();
+    if (night) { ctx.fillStyle = 'rgba(18,30,22,0.95)'; ctx.beginPath(); ctx.arc(ix + 4, iy - 3, 9, 0, 7); ctx.fill(); }   // moon crescent
+    else { ctx.strokeStyle = '#ffd23f'; ctx.lineWidth = 2; for (let a = 0; a < 8; a++) { const an = a / 8 * 6.283; ctx.beginPath(); ctx.moveTo(ix + Math.cos(an) * 13, iy + Math.sin(an) * 13); ctx.lineTo(ix + Math.cos(an) * 16, iy + Math.sin(an) * 16); ctx.stroke(); } }
+  }
   // combo
   if (combo > 1) { const a = Math.min(1, comboT); ctx.globalAlpha = a; ctx.textAlign = 'center'; ctx.font = 'bold 26px Trebuchet MS,sans-serif'; ctx.fillStyle = '#000'; ctx.fillText('КОМБО ×' + combo, VIEW_W / 2 + 1, 112); ctx.fillStyle = combo >= 10 ? '#ff5a4a' : '#ffd23f'; ctx.fillText('КОМБО ×' + combo, VIEW_W / 2, 111); ctx.textAlign = 'left'; ctx.globalAlpha = 1; }
   // toast
