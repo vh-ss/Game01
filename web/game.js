@@ -130,6 +130,7 @@ function checkQuests() {
   if (all && state === 'play') { state = 'win'; AUDIO.stopMusic(); AUDIO.sfx.win(); }
 }
 let curW = 0; const owned = WEAPONS.map((w, i) => i < 2); const wAmmo = WEAPONS.map(w => w.mag);   // start with pistol + bat
+const MAX_MAGS = 3; const reserve = WEAPONS.map((w, i) => i === 0 ? 1 : 0);   // spare magazines per weapon (0..3)
 const bullets = [], eBullets = [], loot = [], particles = [];
 let fireCD = 0, hurtFlash = 0, shakeT = 0, invuln = 0, hitCD = 0, healT = 0, dustT = 0, shareCD = 0;
 let toast = '', toastT = 0; const face = { x: 1, y: 0 };
@@ -326,6 +327,8 @@ function update(dt) {
   // shooting
   fireCD -= dt;
   for (let i = 0; i < WEAPONS.length; i++) if (keys['Digit' + (i + 1)] && owned[i]) curW = i;
+  // auto-reload the current weapon from a spare magazine when empty
+  if (WEAPONS[curW].mag !== Infinity && wAmmo[curW] <= 0 && reserve[curW] > 0) { wAmmo[curW] = WEAPONS[curW].mag; reserve[curW]--; AUDIO.sfx.pickup(); }
   let aim = null;
   if (tFire.active) { aim = autoAim(); face.x = aim.x; face.y = aim.y; }   // gun auto-aims while the fire button is held
   if (fireCD <= 0 && wAmmo[curW] > 0) {
@@ -405,7 +408,7 @@ function update(dt) {
   // home heal
   let onHome = false;
   for (const hm of homes) if (aabb(player.x, player.y, player.w, player.h, hm.x - 16, hm.y - 40, 96 + 32, 112)) {
-    onHome = true; if (health < 100) { health = Math.min(100, health + 60 * dt); } for (let i = 0; i < WEAPONS.length; i++) if (owned[i]) wAmmo[i] = WEAPONS[i].mag;
+    onHome = true; if (health < 100) { health = Math.min(100, health + 60 * dt); } for (let i = 0; i < WEAPONS.length; i++) if (owned[i]) { wAmmo[i] = WEAPONS[i].mag; if (WEAPONS[i].mag !== Infinity) reserve[i] = MAX_MAGS; }
     healT -= dt; if (healT <= 0 && health < 100) { particles.push({ x: player.x + 9 + (Math.random() * 20 - 10), y: player.y + player.h, vx: Math.random() * 14 - 7, vy: -28, life: 0.6, max: 0.6, color: '#7dff9a', size: 3, grav: -10 }); healT = 0.14; }
   }
   stamina = clamp(stamina + (running ? -STAM_DRAIN : (onHome ? STAM_REGEN_HOME : STAM_REGEN)) * dt, 0, STAM_MAX);
@@ -457,7 +460,7 @@ function update(dt) {
     for (const hm of homes) if (aabb(woman.x, woman.y, woman.w, woman.h, hm.x - 16, hm.y - 40, 128, 112)) { womanRescued = true; woman.active = false; spawnBurst(woman.x + 9, woman.y + 11, '#7dff9a', 16, 130, 3); showToast('Жінка вдома! Врятовано ✓'); AUDIO.sfx.win(); }
   }
   ammoCrates = ammoCrates.filter(a => {
-    if (wAmmo[curW] < WEAPONS[curW].mag && aabb(player.x, player.y, player.w, player.h, a.x, a.y, a.w, a.h)) { wAmmo[curW] = WEAPONS[curW].mag; spawnBurst(a.x + 10, a.y + 8, '#ffd23f', 8, 90, 2); AUDIO.sfx.pickup(); showToast('+ набої'); return false; }
+    if (WEAPONS[curW].mag !== Infinity && reserve[curW] < MAX_MAGS && aabb(player.x, player.y, player.w, player.h, a.x, a.y, a.w, a.h)) { reserve[curW] = Math.min(MAX_MAGS, reserve[curW] + 1); spawnBurst(a.x + 10, a.y + 8, '#ffd23f', 8, 90, 2); AUDIO.sfx.pickup(); showToast('+ магазин (' + WEAPONS[curW].name + ')'); return false; }
     if (woman && woman.active && !womanRescued && woman.weapon != null && woman.ammo < WEAPONS[woman.weapon].mag * 3 && aabb(woman.x, woman.y, woman.w, woman.h, a.x, a.y, a.w, a.h)) { woman.ammo = WEAPONS[woman.weapon].mag * 3; spawnBurst(a.x + 10, a.y + 8, '#ffd23f', 8, 90, 2); AUDIO.sfx.pickup(); showToast('Жінка поповнила набої'); return false; }
     return true;
   });
@@ -606,6 +609,8 @@ function drawWeaponBar() {
     ctx.fillStyle = 'rgba(255,255,255,0.7)'; ctx.font = '9px Calibri'; ctx.fillText('' + (i + 1), r.x + 4, r.y + 11);
     ctx.textAlign = 'right'; ctx.fillStyle = wAmmo[i] > 0 ? '#ffd23f' : '#ff6a6a';
     ctx.fillText(w.mag === Infinity ? '∞' : wAmmo[i], r.x + r.w - 4, r.y + r.h - 4);
+    // spare-magazine pips above the slot
+    if (w.mag !== Infinity) for (let m = 0; m < MAX_MAGS; m++) { ctx.fillStyle = m < reserve[i] ? '#ffd23f' : 'rgba(255,255,255,0.2)'; ctx.fillRect(r.x + 6 + m * 9, r.y - 6, 7, 3); }
     ctx.globalAlpha = 1;
   }
   ctx.textAlign = 'left';
@@ -755,6 +760,7 @@ function drawHUD() {
   ctx.textAlign = 'left'; ctx.font = 'bold 14px Calibri,sans-serif'; ctx.fillStyle = '#7a5a2a'; ctx.fillText(w.name, 278, 12);
   ctx.fillStyle = wAmmo[curW] > 0 ? '#c79a1a' : '#d33'; ctx.font = 'bold 13px Calibri,sans-serif';
   ctx.fillText(w.mag === Infinity ? '⦿ ∞' : ('⦿ ' + wAmmo[curW] + '/' + w.mag), 278, 28);
+  if (w.mag !== Infinity) for (let m = 0; m < MAX_MAGS; m++) { ctx.fillStyle = m < reserve[curW] ? '#c79a1a' : 'rgba(0,0,0,0.18)'; ctx.fillRect(360 + m * 9, 24, 7, 8); }
   // coins: coin icon + count
   ctx.drawImage(IMG.coin, VIEW_W - 108, 0, 22, 22);
   ctx.textAlign = 'left'; ctx.font = 'bold 20px Calibri,sans-serif'; ctx.fillStyle = '#c79a1a'; ctx.fillText('' + totalCoins, VIEW_W - 84, 12);
