@@ -93,15 +93,15 @@ function questSpot(minFromPlayer) {
 }
 (function buildCampaign() {
   const ks = questSpot(640); keyItem = { x: ks[0] + 6, y: ks[1] + 6, got: false };
-  quests.push({ type: 'key', label: 'Знайти ключ від будинку' });
+  quests.push({ type: 'key', label: 'Знайти ключ' });
   const hsp = questSpot(900); lockedHouse = { x: hsp[0], y: hsp[1] };
   woman = { x: hsp[0] + 38, y: hsp[1] + 60, w: 18, h: 22, hp: 40, maxhp: 40, flash: 0, invuln: 0, frame: 0, walkT: 0, active: false };
-  quests.push({ type: 'rescue', label: 'Визволити жінку і привести ДОДОМУ' });
+  quests.push({ type: 'rescue', label: 'Врятувати жінку' });
   const bs = questSpot(700); boss = mkZombie(bs[0], bs[1]); boss.isBoss = true; boss.hp = 24; boss.maxhp = 24; boss.w = 30; boss.h = 34; boss.name = BOSS_NAMES[ri(BOSS_NAMES.length)]; boss.armed = true; boss.zw = 1; zombies.push(boss);
-  quests.push({ type: 'boss', label: 'Здолати боса: ' + boss.name });
+  quests.push({ type: 'boss', label: 'Здолати боса' });
   // one random side objective for variety
-  if (Math.random() < 0.5) quests.push({ type: 'coins', target: Math.min(coins.length, 10 + ri(8)), label: 'Зібрати монети' });
-  else quests.push({ type: 'kills', target: 12 + ri(12), label: 'Знищити зомбі' });
+  if (Math.random() < 0.5) quests.push({ type: 'coins', target: Math.min(coins.length, 10 + ri(8)), label: 'Монети' });
+  else quests.push({ type: 'kills', target: 12 + ri(12), label: 'Зомбі' });
 })();
 function checkQuests() {
   let all = true;
@@ -508,13 +508,17 @@ function drawPointer(wx, wy, label, color) {
 
 function drawQuests() {
   if (!quests.length) return;
-  const x = 10, y0 = 46, lh = 18, W2 = 320, hQ = 10 + (quests.length + 1) * lh;
-  ctx.fillStyle = 'rgba(255,252,240,0.82)'; ctx.fillRect(x, y0, W2, hQ);
-  ctx.fillStyle = 'rgba(0,0,0,0.08)'; ctx.fillRect(x, y0 + hQ, W2, 2);
+  const todo = quests.filter(q => !q.done);
+  const doneN = quests.length - todo.length;
+  const lines = todo.slice(0, 4);
+  const x = 8, y0 = 44, lh = 15, W2 = 200, hQ = 7 + (Math.max(1, lines.length) + 1) * lh;
+  ctx.fillStyle = 'rgba(15,16,12,0.42)'; ctx.fillRect(x, y0, W2, hQ);   // subtle dark, see-through
   ctx.textBaseline = 'middle'; ctx.textAlign = 'left';
-  ctx.font = 'bold 13px Calibri,sans-serif'; ctx.fillStyle = '#7a5a2a'; ctx.fillText('ЗАВДАННЯ', x + 8, y0 + 13);
-  ctx.font = '12px Calibri,sans-serif';
-  quests.forEach((q, i) => { const yy = y0 + 13 + (i + 1) * lh; ctx.fillStyle = q.done ? '#4caf50' : '#4a4030'; ctx.fillText((q.done ? '✓ ' : '▢ ') + q.label + (q.prog && !q.done && q.prog !== '?' ? '  ' + q.prog : ''), x + 8, yy); });
+  ctx.font = 'bold 11px Calibri,sans-serif'; ctx.fillStyle = '#ffe08a';
+  ctx.fillText('ЗАВДАННЯ ' + doneN + '/' + quests.length, x + 7, y0 + 11);
+  ctx.font = '11px Calibri,sans-serif';
+  if (lines.length === 0) { ctx.fillStyle = '#9bf09b'; ctx.fillText('✓ усі виконано!', x + 7, y0 + 11 + lh); }
+  else lines.forEach((q, i) => { const yy = y0 + 11 + (i + 1) * lh; ctx.fillStyle = '#fff'; const pr = (q.prog && q.prog !== '🔑' && q.prog !== '?') ? '  ' + q.prog : ''; ctx.fillText('• ' + q.label + pr, x + 7, yy); });
 }
 
 function drawMenu() {
