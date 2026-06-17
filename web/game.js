@@ -119,6 +119,8 @@ let curW = 0; const owned = [true, false, false, false]; const wAmmo = WEAPONS.m
 const bullets = [], eBullets = [], loot = [], particles = [];
 let fireCD = 0, hurtFlash = 0, shakeT = 0, invuln = 0, hitCD = 0, healT = 0, dustT = 0;
 let toast = '', toastT = 0; const face = { x: 1, y: 0 };
+let questsCollapsed = false; const questPanel = { x: 8, y: 44, w: 200, h: 26 };
+const inQuestPanel = (x, y) => x >= questPanel.x && x <= questPanel.x + questPanel.w && y >= questPanel.y && y <= questPanel.y + questPanel.h;
 const cam = { x: 0, y: 0 };
 const clamp = (v, lo, hi) => v < lo ? lo : v > hi ? hi : v;
 let seed = 555; const sr = () => (seed = (seed * 1103515245 + 12345) & 0x7fffffff) / 0x7fffffff;
@@ -137,7 +139,7 @@ addEventListener('keydown', e => {
 addEventListener('keyup', e => { keys[e.code] = false; });
 const mouse = { x: VIEW_W / 2, y: VIEW_H / 2, down: false, moved: false };
 canvas.addEventListener('mousemove', e => { const r = canvas.getBoundingClientRect(); mouse.x = (e.clientX - r.left) * (canvas.width / r.width); mouse.y = (e.clientY - r.top) * (canvas.height / r.height); mouse.moved = true; });
-canvas.addEventListener('mousedown', () => { canvas.focus(); if (state === 'menu') { startGame(); return; } if (state === 'play') mouse.down = true; });
+canvas.addEventListener('mousedown', () => { canvas.focus(); if (state === 'menu') { startGame(); return; } if (state !== 'play') return; if (inQuestPanel(mouse.x, mouse.y)) { questsCollapsed = !questsCollapsed; return; } mouse.down = true; });
 
 function startGame() { state = 'play'; AUDIO.start(); AUDIO.startMusic(); tryFullscreen(); }
 const isMobile = () => matchMedia('(pointer:coarse)').matches || innerWidth < 820;
@@ -184,6 +186,7 @@ canvas.addEventListener('touchstart', e => {
     if (state === 'win' || state === 'gameover') { location.reload(); return; }
     if (inBtn(btnPause, x, y)) { if (state === 'play') { state = 'paused'; AUDIO.stopMusic(); } else if (state === 'paused') { state = 'play'; AUDIO.startMusic(); } continue; }
     if (state !== 'play') continue;
+    if (inQuestPanel(x, y)) { questsCollapsed = !questsCollapsed; continue; }
     if (inBtn(btnWeapon, x, y)) { cycleWeapon(); continue; }
     if (inFire(x, y) && tFire.id === null) { tFire.id = t.identifier; tFire.active = true; }
     else if (x < canvas.width / 2 && tMove.id === null) { tMove.id = t.identifier; tMove.ox = tMove.x = x; tMove.oy = tMove.y = y; tMove.active = true; tMove.mx = tMove.my = 0; }
@@ -510,12 +513,20 @@ function drawQuests() {
   if (!quests.length) return;
   const todo = quests.filter(q => !q.done);
   const doneN = quests.length - todo.length;
-  const lines = todo.slice(0, 4);
-  const x = 8, y0 = 44, lh = 15, W2 = 200, hQ = 7 + (Math.max(1, lines.length) + 1) * lh;
-  ctx.fillStyle = 'rgba(15,16,12,0.42)'; ctx.fillRect(x, y0, W2, hQ);   // subtle dark, see-through
+  const x = questPanel.x, y0 = questPanel.y, lh = 15;
   ctx.textBaseline = 'middle'; ctx.textAlign = 'left';
+  if (questsCollapsed) {
+    questPanel.h = 24;
+    ctx.fillStyle = 'rgba(15,16,12,0.42)'; ctx.fillRect(x, y0, questPanel.w, questPanel.h);
+    ctx.font = 'bold 11px Calibri,sans-serif'; ctx.fillStyle = '#ffe08a';
+    ctx.fillText('ЗАВДАННЯ ' + doneN + '/' + quests.length + '  ▸', x + 7, y0 + 12);
+    return;
+  }
+  const lines = todo.slice(0, 4);
+  questPanel.h = 7 + (Math.max(1, lines.length) + 1) * lh;
+  ctx.fillStyle = 'rgba(15,16,12,0.42)'; ctx.fillRect(x, y0, questPanel.w, questPanel.h);
   ctx.font = 'bold 11px Calibri,sans-serif'; ctx.fillStyle = '#ffe08a';
-  ctx.fillText('ЗАВДАННЯ ' + doneN + '/' + quests.length, x + 7, y0 + 11);
+  ctx.fillText('ЗАВДАННЯ ' + doneN + '/' + quests.length + '  ▾', x + 7, y0 + 11);
   ctx.font = '11px Calibri,sans-serif';
   if (lines.length === 0) { ctx.fillStyle = '#9bf09b'; ctx.fillText('✓ усі виконано!', x + 7, y0 + 11 + lh); }
   else lines.forEach((q, i) => { const yy = y0 + 11 + (i + 1) * lh; ctx.fillStyle = '#fff'; const pr = (q.prog && q.prog !== '🔑' && q.prog !== '?') ? '  ' + q.prog : ''; ctx.fillText('• ' + q.label + pr, x + 7, yy); });
