@@ -35,6 +35,8 @@
   const SFX = {
     shoot(p) { resume(); tone(200 + (p || 0) * 70, 0.07, 'square', 0.10); noise(0.05, 0.06, 1800); },
     eshoot(p) { resume(); tone(150 - (p || 0) * 25, 0.10, 'sawtooth', 0.08); noise(0.06, 0.05, 800); },
+    melee() { resume(); tone(150, 0.07, 'square', 0.10); noise(0.07, 0.12, 700); },
+    flame() { resume(); noise(0.09, 0.05, 480); },
     coin() { resume(); const a = ctx(), t = a.currentTime; tone(880, 0.08, 'sine', 0.16, t); tone(1320, 0.10, 'sine', 0.16, t + 0.07); },
     hurt() { resume(); tone(110, 0.16, 'sawtooth', 0.18); noise(0.10, 0.10, 500); },
     zombie() { resume(); const a = ctx(), t = a.currentTime; const o = tone(280, 0.22, 'sawtooth', 0.14, t); o.frequency.exponentialRampToValueAtTime(70, t + 0.22); },

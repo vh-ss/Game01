@@ -176,10 +176,23 @@
     return c;
   }
 
+  // weapon icons (28×28, transparent) for HUD + mobile selector
+  function wicon(kind) {
+    const [c, x] = make(28, 28); x.lineCap = 'round'; x.lineJoin = 'round';
+    if (kind === 'pistol') { x.fillStyle = '#3a3d44'; x.fillRect(4, 11, 16, 5); x.fillRect(5, 14, 5, 8); x.fillStyle = '#23252b'; x.fillRect(5, 19, 6, 3); x.fillStyle = '#ffd23f'; x.fillRect(19, 11, 3, 2); }
+    else if (kind === 'bat') { x.strokeStyle = '#b9863f'; x.lineWidth = 5; x.beginPath(); x.moveTo(7, 22); x.lineTo(20, 7); x.stroke(); x.strokeStyle = '#8a6230'; x.lineWidth = 6; x.beginPath(); x.moveTo(19, 8); x.lineTo(22, 5); x.stroke(); x.fillStyle = '#6b4a2a'; x.fillRect(5, 20, 4, 4); }
+    else if (kind === 'smg') { x.fillStyle = '#3f5566'; x.fillRect(4, 10, 18, 4); x.fillRect(8, 13, 3, 7); x.fillStyle = '#2a3a45'; x.fillRect(5, 14, 4, 2); x.fillStyle = '#56b8ff'; x.fillRect(20, 10, 3, 2); }
+    else if (kind === 'shotgun') { x.fillStyle = '#5a4632'; x.fillRect(3, 13, 6, 4); x.fillStyle = '#8a8d92'; x.fillRect(9, 11, 15, 3); x.fillRect(9, 14, 15, 3); x.fillStyle = '#caa15a'; x.fillRect(3, 13, 3, 4); }
+    else if (kind === 'blaster') { x.fillStyle = '#6a36a0'; x.fillRect(4, 11, 13, 6); x.fillRect(6, 16, 4, 5); x.fillStyle = '#c46bff'; x.beginPath(); x.arc(20, 14, 4, 0, 7); x.fill(); x.fillStyle = '#e7c0ff'; x.fillRect(6, 12, 4, 2); }
+    else if (kind === 'flame') { x.fillStyle = '#4a4d52'; x.fillRect(4, 12, 9, 6); x.fillRect(11, 13, 5, 4); x.fillStyle = '#ff5a1a'; x.beginPath(); x.moveTo(16, 15); x.bezierCurveTo(26, 8, 24, 20, 18, 19); x.bezierCurveTo(15, 18, 15, 16, 16, 15); x.fill(); x.fillStyle = '#ffd23f'; x.beginPath(); x.arc(19, 15, 2.2, 0, 7); x.fill(); x.fillStyle = '#5a4632'; x.fillRect(5, 16, 3, 4); }
+    return c;
+  }
+
   window.SPRITES = {
     ammo: ammo(), tilemap: tilemap(),
     player: [player(0), player(1), player(2)], enemy: [enemy(0), enemy(1), enemy(2)],
     woman: [woman(0), woman(1), woman(2)], key: key(), lock: lock(),
+    wicon: ['pistol', 'bat', 'smg', 'shotgun', 'blaster', 'flame'].map(wicon),
     coin: coin(), home: home(),
     house1: building('#ff9aa2', '#e87f88', '#d65a6a', '#b8485a', 96, 96),
     house2: building('#9ad0ff', '#7fb6e8', '#4f8fd6', '#3f76b8', 96, 96),

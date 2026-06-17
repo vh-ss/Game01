@@ -21,11 +21,14 @@ const ZWEAPONS = [
   { name: 'Гвинтівка', dmg: 6, speed: 370, cd: 1.7, color: '#8fd0ff' },
 ];
 const WEAPONS = [
-  { name: 'Пістолет',  dmg: 1, rate: 0.30, mag: 12, speed: 500, pellets: 1, spread: 0,    color: '#ffd23f' },
-  { name: 'Автомат',   dmg: 1, rate: 0.08, mag: 30, speed: 560, pellets: 1, spread: 0.06, color: '#56b8ff' },
-  { name: 'Дробовик',  dmg: 2, rate: 0.75, mag: 6,  speed: 460, pellets: 6, spread: 0.40, color: '#ff9a4d' },
-  { name: 'Бластер',   dmg: 6, rate: 0.55, mag: 8,  speed: 820, pellets: 1, spread: 0,    color: '#c46bff' },
+  { name: 'Пістолет', type: 'gun',   dmg: 1, rate: 0.30, mag: 12, speed: 500, pellets: 1, spread: 0,    color: '#ffd23f' },
+  { name: 'Бита',     type: 'melee', dmg: 3, rate: 0.34, mag: Infinity, range: 42,          color: '#b9863f' },
+  { name: 'Автомат',  type: 'gun',   dmg: 1, rate: 0.08, mag: 30, speed: 560, pellets: 1, spread: 0.06, color: '#56b8ff' },
+  { name: 'Дробовик', type: 'gun',   dmg: 2, rate: 0.75, mag: 6,  speed: 460, pellets: 6, spread: 0.40, color: '#ff9a4d' },
+  { name: 'Бластер',  type: 'gun',   dmg: 6, rate: 0.55, mag: 8,  speed: 820, pellets: 1, spread: 0,    color: '#c46bff' },
+  { name: 'Вогнемет', type: 'flame', dmg: 1, rate: 0.04, mag: 140, range: 112, spread: 0.5, color: '#ff7a1a' },
 ];
+const LOOT_WEAPONS = [2, 3, 4, 5];   // which weapons drop from zombies (not the two starters)
 const WALKABLE = new Set([0, 3, 7]);   // grass, sand, path
 
 const canvas = document.getElementById('game');
@@ -115,7 +118,7 @@ function checkQuests() {
   }
   if (all && state === 'play') { state = 'win'; AUDIO.stopMusic(); AUDIO.sfx.win(); }
 }
-let curW = 0; const owned = [true, false, false, false]; const wAmmo = WEAPONS.map(w => w.mag);
+let curW = 0; const owned = WEAPONS.map((w, i) => i < 2); const wAmmo = WEAPONS.map(w => w.mag);   // start with pistol + bat
 const bullets = [], eBullets = [], loot = [], particles = [];
 let fireCD = 0, hurtFlash = 0, shakeT = 0, invuln = 0, hitCD = 0, healT = 0, dustT = 0;
 let toast = '', toastT = 0; const face = { x: 1, y: 0 };
@@ -139,7 +142,7 @@ addEventListener('keydown', e => {
 addEventListener('keyup', e => { keys[e.code] = false; });
 const mouse = { x: VIEW_W / 2, y: VIEW_H / 2, down: false, moved: false };
 canvas.addEventListener('mousemove', e => { const r = canvas.getBoundingClientRect(); mouse.x = (e.clientX - r.left) * (canvas.width / r.width); mouse.y = (e.clientY - r.top) * (canvas.height / r.height); mouse.moved = true; });
-canvas.addEventListener('mousedown', () => { canvas.focus(); if (state === 'menu') { startGame(); return; } if (state !== 'play') return; if (inQuestPanel(mouse.x, mouse.y)) { questsCollapsed = !questsCollapsed; return; } mouse.down = true; });
+canvas.addEventListener('mousedown', () => { canvas.focus(); if (state === 'menu') { startGame(); return; } if (state !== 'play') return; if (inQuestPanel(mouse.x, mouse.y)) { questsCollapsed = !questsCollapsed; return; } const wi = weaponSlotAt(mouse.x, mouse.y); if (wi >= 0) { if (owned[wi]) curW = wi; return; } mouse.down = true; });
 
 function startGame() { state = 'play'; AUDIO.start(); AUDIO.startMusic(); tryFullscreen(); }
 const isMobile = () => matchMedia('(pointer:coarse)').matches || innerWidth < 820;
@@ -166,9 +169,12 @@ const tMove = { id: null, ox: 0, oy: 0, x: 0, y: 0, active: false, mx: 0, my: 0 
 const tFire = { id: null, active: false };
 const fireBtn = { x: VIEW_W - 86, y: VIEW_H - 86, r: 54 };   // big round fire button (bottom-right)
 const btnPause = { x: VIEW_W - 50, y: 46, w: 40, h: 32, label: '⏸' };
-const btnWeapon = { x: VIEW_W / 2 - 28, y: VIEW_H - 54, w: 56, h: 46 };
 const inBtn = (b, x, y) => x >= b.x && x <= b.x + b.w && y >= b.y && y <= b.y + b.h;
 const inFire = (x, y) => Math.hypot(x - fireBtn.x, y - fireBtn.y) <= fireBtn.r + 12;
+// weapon selector bar (bottom-centre) — tap/click an icon to equip
+const WSLOT = 38, WGAP = 4, WBARW = WEAPONS.length * (WSLOT + WGAP) - WGAP;
+const weaponSlotRect = i => ({ x: (VIEW_W - WBARW) / 2 + i * (WSLOT + WGAP), y: VIEW_H - WSLOT - 6, w: WSLOT, h: WSLOT });
+function weaponSlotAt(px, py) { for (let i = 0; i < WEAPONS.length; i++) { const r = weaponSlotRect(i); if (px >= r.x && px <= r.x + r.w && py >= r.y && py <= r.y + r.h) return i; } return -1; }
 function autoAim() {
   const px = player.x + player.w / 2, py = player.y + player.h / 2; let best = null, bd = 520 * 520;
   for (const z of zombies) { const dx = z.x + z.w / 2 - px, dy = z.y + z.h / 2 - py, d = dx * dx + dy * dy; if (d < bd) { bd = d; best = [dx, dy]; } }
@@ -187,7 +193,7 @@ canvas.addEventListener('touchstart', e => {
     if (inBtn(btnPause, x, y)) { if (state === 'play') { state = 'paused'; AUDIO.stopMusic(); } else if (state === 'paused') { state = 'play'; AUDIO.startMusic(); } continue; }
     if (state !== 'play') continue;
     if (inQuestPanel(x, y)) { questsCollapsed = !questsCollapsed; continue; }
-    if (inBtn(btnWeapon, x, y)) { cycleWeapon(); continue; }
+    { const wi = weaponSlotAt(x, y); if (wi >= 0) { if (owned[wi]) curW = wi; continue; } }
     if (inFire(x, y) && tFire.id === null) { tFire.id = t.identifier; tFire.active = true; }
     else if (x < canvas.width / 2 && tMove.id === null) { tMove.id = t.identifier; tMove.ox = tMove.x = x; tMove.oy = tMove.y = y; tMove.active = true; tMove.mx = tMove.my = 0; }
   }
@@ -226,14 +232,36 @@ function hurt(dmg) {
   health -= dmg; hurtFlash = Math.min(1, hurtFlash + 0.35); shakeT = 0.16; invuln = 0.7; AUDIO.sfx.hurt();
   if (health <= 0) { lives--; if (lives <= 0) { state = 'gameover'; AUDIO.stopMusic(); AUDIO.sfx.lose(); return; } health = 100; player.x = LEVEL.playerStart[0]; player.y = LEVEL.playerStart[1]; invuln = 1.2; }
 }
+let swingFx = 0, swingAng = 0;
+function deathFx(z) {
+  if (z.dead) return; z.dead = true;
+  if (z.isBoss) { bossDead = true; shakeT = Math.max(shakeT, 0.4); spawnBurst(z.x + 15, z.y + 17, '#8ec257', 26, 220, 4); showToast('Боса повалено!'); }
+  else spawnBurst(z.x + 9, z.y + 11, '#8ec257', 16, 170, 3);
+  spawnBurst(z.x + 9, z.y + 11, '#ffffff', 6, 120, 2); dropLoot(z); kills++; AUDIO.sfx.zombie();
+}
+function damageZombie(z, dmg, kx, ky) { z.hp -= dmg; z.flash = 0.12; z.x += (kx || 0) * 1.4; z.y += (ky || 0) * 1.4; if (z.hp <= 0) deathFx(z); }
 function fire(dx, dy) {
-  const w = WEAPONS[curW]; const m = Math.hypot(dx, dy) || 1; dx /= m; dy /= m; face.x = dx; face.y = dy; wAmmo[curW]--;
-  const base = Math.atan2(dy, dx), mx = player.x + player.w / 2 + dx * 12, my = player.y + player.h / 2 + dy * 12;
+  const w = WEAPONS[curW]; const m = Math.hypot(dx, dy) || 1; dx /= m; dy /= m; face.x = dx; face.y = dy;
+  const px = player.x + player.w / 2, py = player.y + player.h / 2;
+  if (w.type === 'melee') {              // bat — short-range swing, no ammo
+    swingFx = 0.16; swingAng = Math.atan2(dy, dx); shakeT = Math.max(shakeT, 0.05);
+    for (const z of zombies) { if (z.dead) continue; const zx = z.x + z.w / 2 - px, zy = z.y + z.h / 2 - py, d = Math.hypot(zx, zy); if (d <= w.range + 12 && (zx * dx + zy * dy) / (d || 1) > 0.1) damageZombie(z, w.dmg, dx, dy); }
+    AUDIO.sfx.melee(); return;
+  }
+  if (w.type === 'flame') {              // flamethrower — short cone, burns fuel
+    wAmmo[curW]--;
+    for (let i = 0; i < 3; i++) { const a = Math.atan2(dy, dx) + (Math.random() - 0.5) * w.spread, s = 150 + Math.random() * 130; particles.push({ x: px + dx * 10, y: py + dy * 10, vx: Math.cos(a) * s, vy: Math.sin(a) * s, life: 0.3 + Math.random() * 0.25, max: 0.55, color: ['#ff7a1a', '#ffd23f', '#ff4a1a'][i % 3], size: 4 + Math.random() * 3, grav: 0 }); }
+    for (const z of zombies) { if (z.dead) continue; const zx = z.x + z.w / 2 - px, zy = z.y + z.h / 2 - py, d = Math.hypot(zx, zy); if (d <= w.range && (zx * dx + zy * dy) / (d || 1) > 0.5) damageZombie(z, w.dmg, dx * 0.4, dy * 0.4); }
+    AUDIO.sfx.flame(); return;
+  }
+  // guns
+  wAmmo[curW]--;
+  const base = Math.atan2(dy, dx), mx = px + dx * 12, my = py + dy * 12;
   for (let p = 0; p < w.pellets; p++) { const a = base + (w.pellets > 1 ? (Math.random() - 0.5) * w.spread * 2 : (Math.random() - 0.5) * w.spread); bullets.push({ x: mx, y: my, vx: Math.cos(a) * w.speed, vy: Math.sin(a) * w.speed, life: 1.0, dmg: w.dmg, color: w.color }); }
   spawnBurst(mx, my, '#fff2a8', 3, 50, 2); shakeT = Math.max(shakeT, w.pellets > 1 ? 0.1 : 0.04);
   AUDIO.sfx.shoot(curW);
 }
-function dropLoot(z) { if (sr() > LOOT_CHANCE) return; loot.push({ x: z.x, y: z.y, w: 22, h: 18, weapon: 1 + Math.floor(sr() * 3) }); }
+function dropLoot(z) { if (sr() > LOOT_CHANCE) return; loot.push({ x: z.x, y: z.y, w: 22, h: 18, weapon: LOOT_WEAPONS[Math.floor(sr() * LOOT_WEAPONS.length)] }); }
 function pickDir(z) { const a = Math.random() * 6.283; z.vx = Math.cos(a) * ZSPEED; z.vy = Math.sin(a) * ZSPEED; z.t = 0.6 + Math.random() * 1.2; }
 function respawnZombie() {
   if (zombies.length >= MAX_ZOMBIES || !reachCells.length) return;
@@ -283,17 +311,13 @@ function update(dt) {
   for (let i = bullets.length - 1; i >= 0; i--) {
     const b = bullets[i]; b.x += b.vx * dt; b.y += b.vy * dt; b.life -= dt;
     if (b.life <= 0 || boxSolid(b.x - 1, b.y - 1, 2, 2) || b.x < 0 || b.x > LW || b.y < 0 || b.y > LH) { bullets.splice(i, 1); continue; }
-    for (let j = zombies.length - 1; j >= 0; j--) { const z = zombies[j]; if (b.x >= z.x && b.x <= z.x + z.w && b.y >= z.y && b.y <= z.y + z.h) {
-      z.hp -= b.dmg; z.flash = 0.12; z.x += Math.sign(b.vx) * 1.2;
-      if (z.hp <= 0) {
-        if (z.isBoss) { bossDead = true; shakeT = 0.4; spawnBurst(z.x + 15, z.y + 17, '#ff5a4a', 30, 240, 4); spawnBurst(z.x + 15, z.y + 17, '#ffd23f', 16, 180, 3); showToast('Боса повалено!'); }
-        else spawnBurst(z.x + 9, z.y + 11, '#8ec257', 16, 170, 3);
-        spawnBurst(z.x + 9, z.y + 11, '#ffffff', 6, 120, 2); dropLoot(z); zombies.splice(j, 1); kills++; AUDIO.sfx.zombie();
-      }
-      else spawnBurst(b.x, b.y, '#8ec257', 5, 80, 2);
+    for (let j = zombies.length - 1; j >= 0; j--) { const z = zombies[j]; if (!z.dead && b.x >= z.x && b.x <= z.x + z.w && b.y >= z.y && b.y <= z.y + z.h) {
+      damageZombie(z, b.dmg, Math.sign(b.vx), Math.sign(b.vy));
+      if (!z.dead) spawnBurst(b.x, b.y, '#8ec257', 5, 80, 2);
       bullets.splice(i, 1); break;
     } }
   }
+  for (let i = zombies.length - 1; i >= 0; i--) if (zombies[i].dead) zombies.splice(i, 1);   // remove the slain
 
   // zombie respawn (keeps the town populated)
   respawnT -= dt; if (respawnT <= 0) { respawnT = RESPAWN_EVERY; respawnZombie(); }
@@ -355,16 +379,16 @@ function update(dt) {
   }
   ammoCrates = ammoCrates.filter(a => { if (wAmmo[curW] < WEAPONS[curW].mag && aabb(player.x, player.y, player.w, player.h, a.x, a.y, a.w, a.h)) { wAmmo[curW] = WEAPONS[curW].mag; spawnBurst(a.x + 10, a.y + 8, '#ffd23f', 8, 90, 2); AUDIO.sfx.pickup(); showToast('+ набої'); return false; } return true; });
   for (let i = loot.length - 1; i >= 0; i--) { const a = loot[i]; if (aabb(player.x, player.y, player.w, player.h, a.x, a.y, a.w, a.h)) {
-    const onlyPistol = owned[0] && !owned[1] && !owned[2] && !owned[3];   // still on the starter pistol?
+    const justStarters = owned.filter(Boolean).length <= 2;               // still only the starter weapons?
     owned[a.weapon] = true; wAmmo[a.weapon] = WEAPONS[a.weapon].mag;
-    if (onlyPistol) curW = a.weapon;                                       // auto-equip only the first real weapon
+    if (justStarters) curW = a.weapon;                                     // auto-equip the first looted gun
     spawnBurst(a.x + 11, a.y + 9, WEAPONS[a.weapon].color, 14, 130, 3); AUDIO.sfx.pickup();
     showToast('Нова зброя: ' + WEAPONS[a.weapon].name + (onlyPistol ? '!' : ' (натисни ' + (a.weapon + 1) + ')'));
     loot.splice(i, 1);
   } }
 
   // timers + particles
-  hurtFlash = Math.max(0, hurtFlash - dt * 1.5); shakeT = Math.max(0, shakeT - dt); invuln = Math.max(0, invuln - dt); toastT = Math.max(0, toastT - dt);
+  hurtFlash = Math.max(0, hurtFlash - dt * 1.5); shakeT = Math.max(0, shakeT - dt); invuln = Math.max(0, invuln - dt); toastT = Math.max(0, toastT - dt); swingFx = Math.max(0, swingFx - dt);
   for (let i = particles.length - 1; i >= 0; i--) { const p = particles[i]; p.vy += (p.grav || 0) * dt; p.x += p.vx * dt; p.y += p.vy * dt; p.life -= dt; if (p.life <= 0) particles.splice(i, 1); }
 
   checkQuests();
@@ -443,8 +467,23 @@ function draw() {
   }
 
   if (!(invuln > 0 && Math.floor(invuln * 20) % 2 === 0)) spr(IMG.player[player.frame], player.x - 3, player.y - 8);
-  // gun
-  { const pcx = player.x + player.w / 2 - cam.x, pcy = player.y + player.h / 2 - cam.y; let ang = Math.atan2(face.y, face.x); if (mouse.moved) ang = Math.atan2((mouse.y + cam.y) - (player.y + player.h / 2), (mouse.x + cam.x) - (player.x + player.w / 2)); ctx.save(); ctx.translate(Math.round(pcx), Math.round(pcy)); ctx.rotate(ang); ctx.fillStyle = '#333'; ctx.fillRect(4, -2, 12, 4); ctx.fillStyle = '#555'; ctx.fillRect(2, -3, 5, 6); ctx.restore(); }
+  // held weapon (gun barrel / bat + swing / flame nozzle)
+  {
+    const pcx = player.x + player.w / 2 - cam.x, pcy = player.y + player.h / 2 - cam.y;
+    let ang = Math.atan2(face.y, face.x); if (mouse.moved) ang = Math.atan2((mouse.y + cam.y) - (player.y + player.h / 2), (mouse.x + cam.x) - (player.x + player.w / 2));
+    const wt = WEAPONS[curW].type, wc = WEAPONS[curW].color;
+    ctx.save(); ctx.translate(Math.round(pcx), Math.round(pcy));
+    if (wt === 'melee') {
+      const a = swingFx > 0 ? swingAng - 0.7 + (1 - swingFx / 0.16) * 1.4 : ang;
+      ctx.rotate(a); ctx.strokeStyle = '#b9863f'; ctx.lineWidth = 4; ctx.lineCap = 'round'; ctx.beginPath(); ctx.moveTo(3, 0); ctx.lineTo(20, 0); ctx.stroke();
+      if (swingFx > 0) { ctx.strokeStyle = 'rgba(255,245,210,' + (swingFx / 0.16 * 0.7).toFixed(2) + ')'; ctx.lineWidth = 4; ctx.beginPath(); ctx.arc(0, 0, 22, -0.7, 0.7); ctx.stroke(); }
+    } else if (wt === 'flame') {
+      ctx.rotate(ang); ctx.fillStyle = '#555'; ctx.fillRect(2, -3, 12, 6); ctx.fillStyle = wc; ctx.fillRect(13, -2, 4, 4);
+    } else {
+      ctx.rotate(ang); ctx.fillStyle = '#333'; ctx.fillRect(4, -2, 12, 4); ctx.fillStyle = '#555'; ctx.fillRect(2, -3, 5, 6);
+    }
+    ctx.restore();
+  }
 
   for (const p of particles) { ctx.globalAlpha = Math.max(0, p.life / p.max); ctx.fillStyle = p.color; ctx.fillRect(Math.round(p.x - cam.x - p.size / 2), Math.round(p.y - cam.y - p.size / 2), p.size, p.size); }
   ctx.globalAlpha = 1;
@@ -457,10 +496,26 @@ function draw() {
   else if (hasKey && !womanFreed && lockedHouse) drawPointer(lockedHouse.x + 48, lockedHouse.y + 30, 'БУДИНОК', '#9fe0ff');
   else if (womanFreed && !womanRescued) drawPointer(homes[0].x + 48, homes[0].y, 'ДОДОМУ', '#3fbf60');
   if (boss && !bossDead) drawPointer(boss.x + 15, boss.y, 'БОС', '#ff5a4a');
-  drawHUD(); drawQuests();
+  drawHUD(); drawQuests(); drawWeaponBar();
   if (IS_TOUCH && (state === 'play' || state === 'paused')) drawTouchUI();
   if (state === 'paused') drawPause();
   else if (state !== 'play') drawOverlay();
+}
+
+function drawWeaponBar() {
+  for (let i = 0; i < WEAPONS.length; i++) {
+    const r = weaponSlotRect(i), w = WEAPONS[i], cur = i === curW;
+    ctx.globalAlpha = owned[i] ? 1 : 0.3;
+    ctx.fillStyle = cur ? 'rgba(40,40,28,0.9)' : 'rgba(18,18,14,0.6)'; rr(r.x, r.y, r.w, r.h, 7); ctx.fill();
+    ctx.strokeStyle = cur ? (w.color || '#fff') : 'rgba(255,255,255,0.25)'; ctx.lineWidth = cur ? 3 : 1.5; rr(r.x, r.y, r.w, r.h, 7); ctx.stroke();
+    ctx.drawImage(IMG.wicon[i], Math.round(r.x + r.w / 2 - 14), r.y + 4);
+    ctx.textBaseline = 'alphabetic'; ctx.textAlign = 'left';
+    ctx.fillStyle = 'rgba(255,255,255,0.7)'; ctx.font = '9px Calibri'; ctx.fillText('' + (i + 1), r.x + 4, r.y + 11);
+    ctx.textAlign = 'right'; ctx.fillStyle = wAmmo[i] > 0 ? '#ffd23f' : '#ff6a6a';
+    ctx.fillText(w.mag === Infinity ? '∞' : wAmmo[i], r.x + r.w - 4, r.y + r.h - 4);
+    ctx.globalAlpha = 1;
+  }
+  ctx.textAlign = 'left';
 }
 
 function drawTouchUI() {
@@ -479,11 +534,6 @@ function drawTouchUI() {
   ctx.strokeStyle = 'rgba(255,140,110,0.8)'; ctx.lineWidth = 3; ctx.stroke();
   ctx.fillStyle = '#fff'; ctx.font = 'bold 16px Calibri'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
   ctx.fillText('ВОГОНЬ', fireBtn.x, fireBtn.y); ctx.textBaseline = 'alphabetic';
-  // weapon button
-  ctx.fillStyle = 'rgba(0,0,0,0.35)'; rr(btnWeapon.x, btnWeapon.y, btnWeapon.w, btnWeapon.h, 8); ctx.fill();
-  ctx.strokeStyle = WEAPONS[curW].color; ctx.lineWidth = 2; rr(btnWeapon.x, btnWeapon.y, btnWeapon.w, btnWeapon.h, 8); ctx.stroke();
-  ctx.fillStyle = WEAPONS[curW].color; ctx.font = 'bold 13px Calibri'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
-  ctx.fillText('зброя', btnWeapon.x + btnWeapon.w / 2, btnWeapon.y + 14); ctx.fillStyle = '#fff'; ctx.fillText((curW + 1) + '/4 ▸', btnWeapon.x + btnWeapon.w / 2, btnWeapon.y + 32);
   // pause button
   ctx.fillStyle = 'rgba(0,0,0,0.35)'; rr(btnPause.x, btnPause.y, btnPause.w, btnPause.h, 6); ctx.fill();
   ctx.fillStyle = '#fff'; ctx.font = 'bold 16px Calibri'; ctx.fillText(state === 'paused' ? '▶' : '⏸', btnPause.x + btnPause.w / 2, btnPause.y + btnPause.h / 2 + 1);
@@ -546,7 +596,7 @@ function drawMenu() {
   ctx.globalAlpha = 0.5 + 0.5 * blink; ctx.fillStyle = '#e8932a'; ctx.font = 'bold 28px Calibri,sans-serif';
   ctx.fillText('Натисни ПРОБІЛ або клікни, щоб почати', VIEW_W / 2, VIEW_H / 2 + 36); ctx.globalAlpha = 1;
   ctx.fillStyle = '#5a6a48'; ctx.font = '15px Calibri,sans-serif';
-  ctx.fillText('WASD/стрілки — рух · Shift — біг · миша/F — стрілянина · 1-4 — зброя · Esc — пауза · M — музика', VIEW_W / 2, VIEW_H - 40);
+  ctx.fillText('WASD — рух · Shift — біг · миша/F — стрілянина · 1-6 — зброя · Esc — пауза · M — музика', VIEW_W / 2, VIEW_H - 40);
   ctx.textAlign = 'left';
 }
 
@@ -606,15 +656,16 @@ function drawHUD() {
   ctx.fillStyle = stamina > 25 ? '#42a5f5' : '#ab47bc'; ctx.fillRect(15, 23, stamina / 100 * 188, 9);
   ctx.textBaseline = 'middle'; ctx.fillStyle = '#5a4a32'; ctx.font = 'bold 18px Calibri,sans-serif';
   ctx.fillText('♥' + lives, 214, 16);
-  const w = WEAPONS[curW]; ctx.font = 'bold 14px Calibri,sans-serif'; ctx.fillStyle = '#7a5a2a'; ctx.fillText(w.name, 260, 12);
-  ctx.fillStyle = wAmmo[curW] > 0 ? '#c79a1a' : '#d33'; ctx.fillText('⦿' + wAmmo[curW] + '/' + w.mag, 260, 28);
+  // current weapon: icon + name + ammo (∞ for the bat)
+  const w = WEAPONS[curW];
+  ctx.drawImage(IMG.wicon[curW], 246, 6, 28, 28);
+  ctx.textAlign = 'left'; ctx.font = 'bold 14px Calibri,sans-serif'; ctx.fillStyle = '#7a5a2a'; ctx.fillText(w.name, 278, 12);
+  ctx.fillStyle = wAmmo[curW] > 0 ? '#c79a1a' : '#d33'; ctx.font = 'bold 13px Calibri,sans-serif';
+  ctx.fillText(w.mag === Infinity ? '⦿ ∞' : ('⦿ ' + wAmmo[curW] + '/' + w.mag), 278, 28);
   // coins: coin icon + count
   ctx.drawImage(IMG.coin, VIEW_W - 108, 0, 22, 22);
   ctx.textAlign = 'left'; ctx.font = 'bold 20px Calibri,sans-serif'; ctx.fillStyle = '#c79a1a'; ctx.fillText('' + totalCoins, VIEW_W - 84, 12);
-  ctx.textAlign = 'right'; ctx.font = 'bold 14px Calibri,sans-serif'; ctx.fillStyle = '#6a8f3a'; ctx.fillText('☠ ' + kills, VIEW_W - 14, 30); ctx.textAlign = 'left';
-  ctx.font = '10px Calibri,sans-serif';
-  for (let i = 0; i < 4; i++) { const sx = 430 + i * 60; ctx.globalAlpha = owned[i] ? 1 : .3; ctx.fillStyle = i === curW ? WEAPONS[i].color : 'rgba(0,0,0,.1)'; ctx.fillRect(sx, 26, 56, 12); ctx.fillStyle = i === curW ? '#fff' : '#777'; ctx.textAlign = 'center'; ctx.fillText((i + 1) + ' ' + WEAPONS[i].name, sx + 28, 32); ctx.globalAlpha = 1; }
-  ctx.textAlign = 'left';
+  ctx.textAlign = 'right'; ctx.font = 'bold 14px Calibri,sans-serif'; ctx.fillStyle = '#6a8f3a'; ctx.fillText('☠ ' + kills, VIEW_W - 14, 28); ctx.textAlign = 'left';
   if (toastT > 0) { ctx.globalAlpha = Math.min(1, toastT); ctx.font = 'bold 22px Calibri,sans-serif'; ctx.textAlign = 'center'; ctx.fillStyle = '#fff'; ctx.fillText(toast, VIEW_W / 2 + 1, 71); ctx.fillStyle = '#e8932a'; ctx.fillText(toast, VIEW_W / 2, 70); ctx.textAlign = 'left'; ctx.globalAlpha = 1; }
 }
 
