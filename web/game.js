@@ -131,7 +131,7 @@ function checkQuests() {
 }
 let curW = 0; const owned = WEAPONS.map((w, i) => i < 2); const wAmmo = WEAPONS.map(w => w.mag);   // start with pistol + bat
 const bullets = [], eBullets = [], loot = [], particles = [];
-let fireCD = 0, hurtFlash = 0, shakeT = 0, invuln = 0, hitCD = 0, healT = 0, dustT = 0;
+let fireCD = 0, hurtFlash = 0, shakeT = 0, invuln = 0, hitCD = 0, healT = 0, dustT = 0, shareCD = 0;
 let toast = '', toastT = 0; const face = { x: 1, y: 0 };
 let questsCollapsed = false; const questPanel = { x: 8, y: 44, w: 200, h: 26 };
 const inQuestPanel = (x, y) => x >= questPanel.x && x <= questPanel.x + questPanel.w && y >= questPanel.y && y <= questPanel.y + questPanel.h;
@@ -441,6 +441,16 @@ function update(dt) {
       let best = null, bd = 320 * 320;
       for (const z of zombies) { if (z.dead) continue; const dx = z.x + z.w / 2 - wcx, dy = z.y + z.h / 2 - wcy, q = dx * dx + dy * dy; if (q < bd) { bd = q; best = [dx, dy]; } }
       if (best) { const m = Math.hypot(best[0], best[1]) || 1; woman.aimx = best[0] / m; woman.aimy = best[1] / m; if (woman.fireCD <= 0) { womanFire(wcx, wcy, woman.aimx, woman.aimy); woman.fireCD = WEAPONS[woman.weapon].rate; woman.ammo--; } }
+    }
+    // share ammo when standing close together (whoever is empty gets a hand)
+    shareCD = Math.max(0, shareCD - dt);
+    const near = Math.hypot(pcx2 - wcx, pcy2 - wcy) < 56, pFinite = WEAPONS[curW].mag !== Infinity;
+    if (near && shareCD <= 0 && pFinite) {
+      if (woman.weapon != null && woman.ammo <= 0 && wAmmo[curW] > 6) {                       // you → her
+        const give = Math.min(Math.floor(wAmmo[curW] / 2), 20); wAmmo[curW] -= give; woman.ammo = Math.min(WEAPONS[woman.weapon].mag * 3, woman.ammo + give); shareCD = 1.2; showToast('Ти поділився набоями 🤝');
+      } else if (wAmmo[curW] <= 0 && woman.weapon != null && woman.ammo > 6) {                 // her → you
+        const give = Math.min(Math.floor(woman.ammo / 2), 20); woman.ammo -= give; wAmmo[curW] = Math.min(WEAPONS[curW].mag, wAmmo[curW] + give); shareCD = 1.2; showToast('Жінка поділилась набоями 🤝');
+      }
     }
     for (const z of zombies) if (woman.invuln <= 0 && aabb(woman.x, woman.y, woman.w, woman.h, z.x, z.y, z.w, z.h)) { woman.hp -= 14; woman.invuln = 0.6; woman.flash = 0.14; spawnBurst(wcx, wcy, '#e0518f', 6, 90, 2); break; }
     if (woman.hp <= 0) { womanDead = true; state = 'gameover'; failReason = 'Жінку вбили — місію провалено'; AUDIO.stopMusic(); AUDIO.sfx.lose(); }
