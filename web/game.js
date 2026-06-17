@@ -141,11 +141,11 @@ const bushes = [];
     const wx = c * TS + 16, wy = r * TS + 16;
     if (Math.hypot(wx - player.x, wy - player.y) < 220) continue;
     if (bushes.some(b => Math.abs(b.x - wx) < 64 && Math.abs(b.y - wy) < 64)) continue;
-    const ambush = ambushes < 6;
+    const ambush = ambushes < 14;
     const bush = { x: wx, y: wy, ambush, triggered: false, members: [] };
     if (ambush) { const n = 2 + Math.floor(Math.random() * 4); for (let k = 0; k < n; k++) { const z = mkCrim(wx + Math.random() * 26 - 13, wy + Math.random() * 26 - 13); z.hidden = true; zombies.push(z); bush.members.push(z); } ambushes++; }
     bushes.push(bush);
-    if (bushes.length >= 34) break;
+    if (bushes.length >= 70) break;
   }
 }
 function checkQuests() {
