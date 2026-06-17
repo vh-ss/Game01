@@ -830,11 +830,13 @@ function drawHUD() {
   ctx.fillStyle = wAmmo[curW] > 0 ? '#ffd23f' : '#ff7a7a'; ctx.font = 'bold 14px Trebuchet MS,sans-serif';
   ctx.fillText(w.mag === Infinity ? '⦿ ∞' : ('⦿ ' + wAmmo[curW] + '/' + w.mag), 280, 44);
   if (w.mag !== Infinity) for (let m = 0; m < MAX_MAGS; m++) { ctx.fillStyle = m < reserve[curW] ? '#ffd23f' : 'rgba(255,255,255,0.18)'; ctx.fillRect(376 + m * 10, 40, 8, 8); }
-  // --- score panel (top-right) ---
-  const sx = VIEW_W - 166;
-  panel(sx, 8, 156, 52);
-  ctx.drawImage(IMG.coin, sx + 10, 14, 26, 26); ctx.fillStyle = '#ffd23f'; ctx.font = 'bold 22px Trebuchet MS,sans-serif'; ctx.fillText('' + totalCoins, sx + 42, 24);
-  ctx.fillStyle = '#9bf09b'; ctx.font = 'bold 17px Trebuchet MS,sans-serif'; ctx.fillText('☠ ' + kills, sx + 42, 45);
+  // --- score panel (top-right): icons left, numbers right-aligned ---
+  const pw = 104, sx = VIEW_W - 10 - pw;
+  panel(sx, 8, pw, 52);
+  ctx.drawImage(IMG.coin, sx + 12, 12, 22, 22);
+  ctx.fillStyle = '#ffd23f'; ctx.font = 'bold 19px Trebuchet MS,sans-serif'; ctx.textAlign = 'right'; ctx.fillText('' + totalCoins, sx + pw - 14, 23);
+  ctx.fillStyle = '#9bf09b'; ctx.font = 'bold 18px Trebuchet MS,sans-serif'; ctx.textAlign = 'left'; ctx.fillText('☠', sx + 13, 45);
+  ctx.textAlign = 'right'; ctx.fillText('' + kills, sx + pw - 14, 45); ctx.textAlign = 'left';
   // toast
   if (toastT > 0) { ctx.globalAlpha = Math.min(1, toastT); ctx.font = 'bold 22px Trebuchet MS,sans-serif'; ctx.textAlign = 'center'; ctx.fillStyle = '#000'; ctx.fillText(toast, VIEW_W / 2 + 1, 81); ctx.fillStyle = '#ffd23f'; ctx.fillText(toast, VIEW_W / 2, 80); ctx.textAlign = 'left'; ctx.globalAlpha = 1; }
 }
