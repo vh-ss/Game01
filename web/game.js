@@ -77,7 +77,8 @@ function mkCrim(x, y) {
   return { x, y, w: 18, h: 22, vx: 0, vy: 0, t: 0, hp: 5, flash: 0, frame: 0, crim: true, carrying: 0, stealCD: 0, fleeT: 0, stolenWeapon: null,
     armed, zw: armed ? Math.floor(Math.random() * ZWEAPONS.length) : 0, shootCD: 0.8 + Math.random() * 1.5, hasBullet: false, aimx: 1, aimy: 0 };
 }
-let coins = LEVEL.coins.map(([x, y]) => ({ x, y }));
+function coinVal() { const r = Math.random(); return r < 0.5 ? 1 : r < 0.8 ? 2 : r < 0.94 ? 3 : 5; }   // varying coin worth
+let coins = LEVEL.coins.map(([x, y]) => ({ x, y, v: coinVal() }));
 const homes = LEVEL.homes.map(([x, y]) => ({ x, y }));
 const houseImgs = [IMG.house1, IMG.house2, IMG.house3];
 let hs = 9; const h3 = () => (hs = (hs * 1103515245 + 12345) & 0x7fffffff) % 3;
@@ -99,8 +100,8 @@ for (const h of houses) {
 }
 // wrecked cars (decoration) + extra coins stashed in houses & by cars
 const cars = (LEVEL.cars || []).map(([x, y]) => ({ x, y, fire: 0, burnT: 0 }));
-for (const h of houses) { const c = Math.floor((h.x + 48) / TS), r = Math.floor((h.y + 84) / TS); if (r >= 0 && r < ROWS && c >= 0 && c < COLS && reachable(c, r) && ar() < 0.55) coins.push({ x: c * TS + 16, y: r * TS + 16 }); }
-for (const cr of cars) { if (ar() < 0.6) coins.push({ x: cr.x + 22, y: cr.y + 12 }); }
+for (const h of houses) { const c = Math.floor((h.x + 48) / TS), r = Math.floor((h.y + 84) / TS); if (r >= 0 && r < ROWS && c >= 0 && c < COLS && reachable(c, r) && ar() < 0.55) coins.push({ x: c * TS + 16, y: r * TS + 16, v: coinVal() + 1 }); }
+for (const cr of cars) { if (ar() < 0.6) coins.push({ x: cr.x + 22, y: cr.y + 12, v: coinVal() + 1 }); }
 
 let health = 100, lives = 3, totalCoins = 0, kills = 0, state = 'title', stamina = STAM_MAX, animClock = 0, respawnT = RESPAWN_EVERY;
 let combo = 0, comboT = 0, score = 0, coinsTotal = 0; let best = 0; try { best = +(localStorage.getItem('punktown_best') || 0); } catch (e) {}
@@ -142,7 +143,7 @@ function questSpot(minFromPlayer) {
   const bs = questSpot(700); boss = mkZombie(bs[0], bs[1]); boss.isBoss = true; boss.hp = 24; boss.maxhp = 24; boss.w = 30; boss.h = 34; boss.name = BOSS_NAMES[ri(BOSS_NAMES.length)]; boss.armed = true; boss.zw = 1; zombies.push(boss);
   quests.push({ type: 'boss', label: 'Здолати боса' });
   // one random side objective for variety
-  if (Math.random() < 0.5) quests.push({ type: 'coins', target: Math.min(coins.length, 10 + ri(8)), label: 'Монети' });
+  if (Math.random() < 0.5) quests.push({ type: 'coins', target: 25 + ri(20), label: 'Монети' });
   else quests.push({ type: 'kills', target: 12 + ri(12), label: 'Зомбі' });
 })();
 // gangs of coin-stealing bandits, scattered across the town
@@ -308,7 +309,7 @@ function deathFx(z) {
   if (z.isBoss) { bossDead = true; shakeT = Math.max(shakeT, 0.4); spawnBurst(z.x + 15, z.y + 17, '#8ec257', 26, 220, 4); showToast('Боса повалено!'); }
   else if (z.crim) {
     spawnBurst(z.x + 9, z.y + 11, '#c0392b', 14, 160, 3);
-    for (let k = 0; k < (z.carrying || 0); k++) coins.push({ x: z.x + Math.random() * 22 - 11, y: z.y + Math.random() * 22 - 11 });   // drop stolen coins
+    for (let k = 0; k < (z.carrying || 0); k++) coins.push({ x: z.x + Math.random() * 22 - 11, y: z.y + Math.random() * 22 - 11, v: 1 });   // drop stolen coins
     if (z.stolenWeapon != null) loot.push({ x: z.x, y: z.y, w: 22, h: 18, weapon: z.stolenWeapon });   // drop stolen weapon
     if (z.carrying > 0 || z.stolenWeapon != null) showToast('Здобич повернуто! 💰');
   }
@@ -320,6 +321,10 @@ function deathFx(z) {
   }
   else spawnBurst(z.x + 9, z.y + 11, '#8ec257', 16, 170, 3);
   spawnBurst(z.x + 9, z.y + 11, '#ffffff', 6, 120, 2); dropLoot(z); kills++; AUDIO.sfx.zombie();
+  // coin drops (vary by type)
+  let drops = 0;
+  if (z.isBoss) drops = 10; else if (z.ztype === 'tank') drops = 3; else if (!z.crim && Math.random() < 0.45) drops = 1;
+  for (let k = 0; k < drops; k++) coins.push({ x: z.x + z.w / 2 + Math.random() * 30 - 15, y: z.y + z.h / 2 + Math.random() * 30 - 15, v: coinVal() + (z.isBoss ? 2 : z.ztype === 'tank' ? 1 : 0) });
   // combo & score
   combo++; comboT = 2.6; score += Math.round((z.isBoss ? 200 : z.ztype === 'tank' ? 30 : 12) * (1 + Math.min(combo, 25) * 0.12));
 }
@@ -496,7 +501,7 @@ function update(dt) {
   stamina = clamp(stamina + (running ? -STAM_DRAIN : (onHome ? STAM_REGEN_HOME : STAM_REGEN)) * dt, 0, STAM_MAX);
 
   // pickups
-  coins = coins.filter(co => { if (aabb(player.x, player.y, player.w, player.h, co.x - 10, co.y - 10, 28, 28)) { totalCoins++; coinsTotal++; score += 10; spawnBurst(co.x, co.y, '#ffd23f', 8, 80, 2); AUDIO.sfx.coin(); return false; } return true; });
+  coins = coins.filter(co => { if (aabb(player.x, player.y, player.w, player.h, co.x - 10, co.y - 10, 28, 28)) { const v = co.v || 1; totalCoins += v; coinsTotal += v; score += v * 5; spawnBurst(co.x, co.y, '#ffd23f', 6 + v * 2, 80, 2); AUDIO.sfx.coin(); return false; } return true; });
   // key pickup
   if (keyItem && !keyItem.got && aabb(player.x, player.y, player.w, player.h, keyItem.x - 6, keyItem.y - 6, 28, 28)) { keyItem.got = true; hasKey = true; AUDIO.sfx.pickup(); spawnBurst(keyItem.x + 6, keyItem.y + 6, '#ffd23f', 16, 140, 3); showToast('Знайдено ключ! Іди до будинку 🏚'); }
   // unlock the house with the key
@@ -658,7 +663,12 @@ function draw() {
   for (const b of bushes) drawBush(b);
   for (const h of houses) { spr(h.img, h.x, h.y); if (h.fire) burnLook(h, Math.round(h.x - cam.x), Math.round(h.y - cam.y), 96, 96); }
   for (const hm of homes) spr(IMG.home, hm.x, hm.y - 32);
-  for (const co of coins) spr(IMG.coin, co.x - 10, co.y - 10 + Math.sin(animClock * 3 + co.x) * 2);
+  for (const co of coins) {
+    const v = co.v || 1, s = v >= 5 ? 30 : v >= 3 ? 26 : 22, bob = Math.sin(animClock * 3 + co.x) * 2;
+    const cx = co.x + 6 - cam.x, cy = co.y + 6 + bob - cam.y;
+    ctx.drawImage(IMG.coin, Math.round(cx - s / 2), Math.round(cy - s / 2), s, s);
+    if (v > 1) { ctx.fillStyle = '#1a1a10'; ctx.font = 'bold 11px Trebuchet MS,sans-serif'; ctx.textAlign = 'center'; ctx.fillText('×' + v, cx + 1, cy - s / 2 - 1); ctx.fillStyle = '#ffe08a'; ctx.fillText('×' + v, cx, cy - s / 2 - 2); ctx.textAlign = 'left'; }
+  }
   for (const a of ammoCrates) spr(IMG.ammo, a.x, a.y + Math.sin(animClock * 3 + a.x) * 1.5);
   for (const a of loot) { const lx = Math.round(a.x - cam.x), ly = Math.round(a.y - cam.y + Math.sin(animClock * 4 + a.x) * 2); ctx.fillStyle = WEAPONS[a.weapon].color; ctx.globalAlpha = .35; ctx.fillRect(lx - 3, ly - 3, a.w + 6, a.h + 6); ctx.globalAlpha = 1; ctx.fillStyle = '#8a5a2e'; ctx.fillRect(lx, ly, a.w, a.h); ctx.fillStyle = WEAPONS[a.weapon].color; ctx.fillRect(lx + 3, ly + 6, a.w - 6, 4); }
 

@@ -63,7 +63,7 @@ function genWorld() {
     return out;
   }
   const zombies = place(38, 150, 360);
-  const coins = place(40, 140, 240);
+  const coins = place(55, 120, 220);
 
   const houses = []; let t = 0;
   while (houses.length < 16 && t++ < 1500) { const c = 2 + ri(W - 5), r = 2 + ri(H - 6); const wx = c * TS, wy = r * TS; if (g[r][c] === 0 && houses.every(h => Math.abs(h[0] - wx) > 120 || Math.abs(h[1] - wy) > 120)) houses.push([wx, wy]); }
