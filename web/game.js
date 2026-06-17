@@ -383,7 +383,7 @@ function update(dt) {
     owned[a.weapon] = true; wAmmo[a.weapon] = WEAPONS[a.weapon].mag;
     if (justStarters) curW = a.weapon;                                     // auto-equip the first looted gun
     spawnBurst(a.x + 11, a.y + 9, WEAPONS[a.weapon].color, 14, 130, 3); AUDIO.sfx.pickup();
-    showToast('Нова зброя: ' + WEAPONS[a.weapon].name + (onlyPistol ? '!' : ' (натисни ' + (a.weapon + 1) + ')'));
+    showToast('Нова зброя: ' + WEAPONS[a.weapon].name + (justStarters ? '!' : ' (натисни ' + (a.weapon + 1) + ')'));
     loot.splice(i, 1);
   } }
 
