@@ -2,7 +2,7 @@
 // zombies, heal at home. Sunny, friendly atmosphere (no horror).
 
 const LEVEL = genWorld();   // fresh procedural town every run/restart
-const VIEW_W = 760, VIEW_H = 600;
+let VIEW_W = window.innerWidth, VIEW_H = window.innerHeight, DPR = Math.min(window.devicePixelRatio || 1, 2);
 const TS = LEVEL.tileSize;
 const COLS = LEVEL.width / TS, ROWS = LEVEL.height / TS;
 const LW = LEVEL.width, LH = LEVEL.height;
@@ -33,8 +33,18 @@ const WALKABLE = new Set([0, 3, 7]);   // grass, sand, path
 
 const canvas = document.getElementById('game');
 const ctx = canvas.getContext('2d');
-ctx.imageSmoothingEnabled = false;
 const IMG = SPRITES;
+function resize() {
+  VIEW_W = window.innerWidth; VIEW_H = window.innerHeight;
+  DPR = Math.min(window.devicePixelRatio || 1, 2);
+  canvas.width = Math.floor(VIEW_W * DPR); canvas.height = Math.floor(VIEW_H * DPR);
+  canvas.style.width = VIEW_W + 'px'; canvas.style.height = VIEW_H + 'px';
+  ctx.setTransform(DPR, 0, 0, DPR, 0, 0);
+  ctx.imageSmoothingEnabled = true;   // smooth (no pixel look)
+}
+window.addEventListener('resize', resize);
+window.addEventListener('orientationchange', () => setTimeout(resize, 200));
+resize();
 
 // ---- tiles ----
 const tileIdx = Array.from({ length: ROWS }, () => new Array(COLS).fill(0));
@@ -156,7 +166,7 @@ addEventListener('keydown', e => {
 });
 addEventListener('keyup', e => { keys[e.code] = false; });
 const mouse = { x: VIEW_W / 2, y: VIEW_H / 2, down: false, moved: false };
-canvas.addEventListener('mousemove', e => { const r = canvas.getBoundingClientRect(); mouse.x = (e.clientX - r.left) * (canvas.width / r.width); mouse.y = (e.clientY - r.top) * (canvas.height / r.height); mouse.moved = true; });
+canvas.addEventListener('mousemove', e => { const r = canvas.getBoundingClientRect(); mouse.x = e.clientX - r.left; mouse.y = e.clientY - r.top; mouse.moved = true; });
 canvas.addEventListener('mousedown', () => { canvas.focus(); if (state === 'title') { startGame(); return; } if (state !== 'play') return; if (inQuestPanel(mouse.x, mouse.y)) { questsCollapsed = !questsCollapsed; return; } const wi = weaponSlotAt(mouse.x, mouse.y); if (wi >= 0) { if (owned[wi]) curW = wi; return; } mouse.down = true; });
 
 function startGame() { if (state !== 'title') return; state = 'play'; if ($title) $title.classList.add('hidden'); AUDIO.start(); tryFullscreen(); }
@@ -170,28 +180,20 @@ function showEndScreen() {
 document.getElementById('startBtn').addEventListener('click', startGame);
 document.getElementById('againBtn').addEventListener('click', () => location.reload());
 const isMobile = () => matchMedia('(pointer:coarse)').matches || innerWidth < 820;
-function fitCanvas() {
-  const ar = VIEW_W / VIEW_H, w = innerWidth, h = innerHeight;
-  let cw, ch; if (w / h > ar) { ch = h; cw = h * ar; } else { cw = w; ch = w / ar; }
-  canvas.style.width = Math.round(cw) + 'px'; canvas.style.height = Math.round(ch) + 'px';
-}
 function tryFullscreen() {
   if (!isMobile()) return;
   const el = document.documentElement, req = el.requestFullscreen || el.webkitRequestFullscreen;
   if (req) { try { req.call(el); } catch (e) {} }
-  setTimeout(fitCanvas, 300);
+  setTimeout(resize, 300);
 }
-addEventListener('resize', fitCanvas);
-addEventListener('orientationchange', () => setTimeout(fitCanvas, 250));
-fitCanvas();
 
 // ---- touch controls (mobile): left = move stick, right = aim/fire stick ----
 const IS_TOUCH = ('ontouchstart' in window) || navigator.maxTouchPoints > 0;
 const STICK_R = 52;
 const tMove = { id: null, ox: 0, oy: 0, x: 0, y: 0, active: false, mx: 0, my: 0 };
 const tFire = { id: null, active: false };
-const fireBtn = { x: VIEW_W - 86, y: VIEW_H - 86, r: 54 };   // big round fire button (bottom-right)
-const btnPause = { x: VIEW_W - 50, y: 46, w: 40, h: 32, label: '⏸' };
+const fireBtn = { r: 54, get x() { return VIEW_W - 86; }, get y() { return VIEW_H - 86; } };   // big round fire button (bottom-right)
+const btnPause = { y: 48, w: 40, h: 32, get x() { return VIEW_W - 50; } };
 const inBtn = (b, x, y) => x >= b.x && x <= b.x + b.w && y >= b.y && y <= b.y + b.h;
 const inFire = (x, y) => Math.hypot(x - fireBtn.x, y - fireBtn.y) <= fireBtn.r + 12;
 // weapon selector bar (bottom-centre) — tap/click an icon to equip
@@ -204,7 +206,7 @@ function autoAim() {
   if (best) { const m = Math.hypot(best[0], best[1]) || 1; return { x: best[0] / m, y: best[1] / m }; }
   return { x: face.x, y: face.y };
 }
-function canvasXY(t) { const r = canvas.getBoundingClientRect(); return [(t.clientX - r.left) * (canvas.width / r.width), (t.clientY - r.top) * (canvas.height / r.height)]; }
+function canvasXY(t) { const r = canvas.getBoundingClientRect(); return [t.clientX - r.left, t.clientY - r.top]; }
 function cycleWeapon() { for (let k = 1; k <= WEAPONS.length; k++) { const ni = (curW + k) % WEAPONS.length; if (owned[ni]) { curW = ni; break; } } }
 
 canvas.addEventListener('touchstart', e => {
@@ -509,7 +511,7 @@ function draw() {
 
   const c0 = Math.max(0, Math.floor(cam.x / TS)), c1 = Math.min(COLS - 1, Math.floor((cam.x + VIEW_W) / TS));
   const r0 = Math.max(0, Math.floor(cam.y / TS)), r1 = Math.min(ROWS - 1, Math.floor((cam.y + VIEW_H) / TS));
-  for (let r = r0; r <= r1; r++) for (let c = c0; c <= c1; c++) ctx.drawImage(IMG.tilemap, tileIdx[r][c] * TS, 0, TS, TS, Math.round(c * TS - cam.x), Math.round(r * TS - cam.y), TS, TS);
+  for (let r = r0; r <= r1; r++) for (let c = c0; c <= c1; c++) ctx.drawImage(IMG.tilemap, tileIdx[r][c] * TS, 0, TS, TS, Math.floor(c * TS - cam.x), Math.floor(r * TS - cam.y), TS + 1, TS + 1);
 
   for (const cr of cars) spr(IMG.car, cr[0], cr[1]);
   for (const h of houses) spr(h.img, h.x, h.y);
