@@ -86,7 +86,9 @@ const cars = LEVEL.cars || [];
 for (const h of houses) { const c = Math.floor((h.x + 48) / TS), r = Math.floor((h.y + 84) / TS); if (r >= 0 && r < ROWS && c >= 0 && c < COLS && reachable(c, r) && ar() < 0.55) coins.push({ x: c * TS + 16, y: r * TS + 16 }); }
 for (const cr of cars) { if (ar() < 0.6) coins.push({ x: cr[0] + 22, y: cr[1] + 12 }); }
 
-let health = 100, lives = 3, totalCoins = 0, kills = 0, state = 'menu', stamina = STAM_MAX, animClock = 0, respawnT = RESPAWN_EVERY;
+let health = 100, lives = 3, totalCoins = 0, kills = 0, state = 'title', stamina = STAM_MAX, animClock = 0, respawnT = RESPAWN_EVERY;
+let endShown = false;
+const $title = document.getElementById('titleScreen'), $end = document.getElementById('endScreen');
 const reachCells = (LEVEL.reach || []).filter(([c, r]) => r >= 0 && r < ROWS && c >= 0 && c < COLS && !solid[r][c]);
 
 // ---- campaign: find key → free woman from locked house → escort her home; always also kill the boss ----
@@ -133,7 +135,8 @@ let curW = 0; const owned = WEAPONS.map((w, i) => i < 2); const wAmmo = WEAPONS.
 const MAX_MAGS = 3; const reserve = WEAPONS.map((w, i) => i === 0 ? 1 : 0);   // spare magazines per weapon (0..3)
 const bullets = [], eBullets = [], loot = [], particles = [];
 let fireCD = 0, hurtFlash = 0, shakeT = 0, invuln = 0, hitCD = 0, healT = 0, dustT = 0, shareCD = 0;
-let toast = '', toastT = 0; const face = { x: 1, y: 0 };
+let toast = '', toastT = 0, speech = '', speechT = 0; const face = { x: 1, y: 0 };
+function say(t) { speech = t; speechT = 4.5; }
 let questsCollapsed = false; const questPanel = { x: 8, y: 44, w: 200, h: 26 };
 const inQuestPanel = (x, y) => x >= questPanel.x && x <= questPanel.x + questPanel.w && y >= questPanel.y && y <= questPanel.y + questPanel.h;
 const cam = { x: 0, y: 0 };
@@ -145,7 +148,7 @@ const keys = {};
 addEventListener('keydown', e => {
   keys[e.code] = true;
   if (['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight', 'Space'].includes(e.code)) e.preventDefault();
-  if (state === 'menu' && (e.code === 'Space' || e.code === 'Enter')) startGame();
+  if (state === 'title' && (e.code === 'Space' || e.code === 'Enter')) startGame();
   else if ((state === 'win' || state === 'gameover') && e.code === 'KeyR') location.reload();
   else if (e.code === 'Escape' && state === 'play') { state = 'paused'; AUDIO.stopMusic(); }
   else if (e.code === 'Escape' && state === 'paused') { state = 'play'; AUDIO.startMusic(); }
@@ -154,13 +157,21 @@ addEventListener('keydown', e => {
 addEventListener('keyup', e => { keys[e.code] = false; });
 const mouse = { x: VIEW_W / 2, y: VIEW_H / 2, down: false, moved: false };
 canvas.addEventListener('mousemove', e => { const r = canvas.getBoundingClientRect(); mouse.x = (e.clientX - r.left) * (canvas.width / r.width); mouse.y = (e.clientY - r.top) * (canvas.height / r.height); mouse.moved = true; });
-canvas.addEventListener('mousedown', () => { canvas.focus(); if (state === 'menu') { startGame(); return; } if (state !== 'play') return; if (inQuestPanel(mouse.x, mouse.y)) { questsCollapsed = !questsCollapsed; return; } const wi = weaponSlotAt(mouse.x, mouse.y); if (wi >= 0) { if (owned[wi]) curW = wi; return; } mouse.down = true; });
+canvas.addEventListener('mousedown', () => { canvas.focus(); if (state === 'title') { startGame(); return; } if (state !== 'play') return; if (inQuestPanel(mouse.x, mouse.y)) { questsCollapsed = !questsCollapsed; return; } const wi = weaponSlotAt(mouse.x, mouse.y); if (wi >= 0) { if (owned[wi]) curW = wi; return; } mouse.down = true; });
 
-function startGame() { state = 'play'; AUDIO.start(); AUDIO.startMusic(); tryFullscreen(); }
+function startGame() { if (state !== 'title') return; state = 'play'; if ($title) $title.classList.add('hidden'); AUDIO.start(); tryFullscreen(); }
+function showEndScreen() {
+  if (!$end) return;
+  const t = document.getElementById('endTitle'), p = document.getElementById('endText');
+  if (state === 'win') { t.textContent = '🎉 ПЕРЕМОГА!'; t.className = 'win'; p.textContent = 'Жінку врятовано, боса повалено, місто очищено! Вбито ворогів: ' + kills + '.'; }
+  else { t.textContent = '☠ КІНЕЦЬ ГРИ'; t.className = 'lose'; p.textContent = failReason || 'Тебе здолали. Спробуй ще — щоразу нова мапа.'; }
+  $end.classList.remove('hidden');
+}
+document.getElementById('startBtn').addEventListener('click', startGame);
+document.getElementById('againBtn').addEventListener('click', () => location.reload());
 const isMobile = () => matchMedia('(pointer:coarse)').matches || innerWidth < 820;
 function fitCanvas() {
-  if (!isMobile()) { canvas.style.width = ''; canvas.style.height = ''; return; }
-  const ar = VIEW_W / VIEW_H; const w = innerWidth, h = innerHeight;
+  const ar = VIEW_W / VIEW_H, w = innerWidth, h = innerHeight;
   let cw, ch; if (w / h > ar) { ch = h; cw = h * ar; } else { cw = w; ch = w / ar; }
   canvas.style.width = Math.round(cw) + 'px'; canvas.style.height = Math.round(ch) + 'px';
 }
@@ -200,7 +211,7 @@ canvas.addEventListener('touchstart', e => {
   e.preventDefault();
   for (const t of e.changedTouches) {
     const [x, y] = canvasXY(t);
-    if (state === 'menu') { startGame(); return; }
+    if (state === 'title') { startGame(); return; }
     if (state === 'win' || state === 'gameover') { location.reload(); return; }
     if (inBtn(btnPause, x, y)) { if (state === 'play') { state = 'paused'; AUDIO.stopMusic(); } else if (state === 'paused') { state = 'play'; AUDIO.startMusic(); } continue; }
     if (state !== 'play') continue;
@@ -419,7 +430,7 @@ function update(dt) {
   if (keyItem && !keyItem.got && aabb(player.x, player.y, player.w, player.h, keyItem.x - 6, keyItem.y - 6, 28, 28)) { keyItem.got = true; hasKey = true; AUDIO.sfx.pickup(); spawnBurst(keyItem.x + 6, keyItem.y + 6, '#ffd23f', 16, 140, 3); showToast('Знайдено ключ! Іди до будинку 🏚'); }
   // unlock the house with the key
   if (hasKey && !womanFreed && lockedHouse && aabb(player.x, player.y, player.w, player.h, lockedHouse.x - 10, lockedHouse.y, 116, 110)) {
-    womanFreed = true; woman.active = true; AUDIO.sfx.pickup(); spawnBurst(lockedHouse.x + 48, lockedHouse.y + 60, '#ffd23f', 20, 160, 3); showToast('Жінку звільнено! Веди її ДОДОМУ 🏠');
+    womanFreed = true; woman.active = true; AUDIO.sfx.pickup(); spawnBurst(lockedHouse.x + 48, lockedHouse.y + 60, '#ffd23f', 20, 160, 3); say('Дякую, що відчинив! Прикрий мене — і веди ДОДОМУ, будь ласка.');
   }
   // woman: follow, take damage, escort, or die
   if (woman && woman.active && !womanRescued && !womanDead) {
@@ -457,7 +468,7 @@ function update(dt) {
     }
     for (const z of zombies) if (woman.invuln <= 0 && aabb(woman.x, woman.y, woman.w, woman.h, z.x, z.y, z.w, z.h)) { woman.hp -= 14; woman.invuln = 0.6; woman.flash = 0.14; spawnBurst(wcx, wcy, '#e0518f', 6, 90, 2); break; }
     if (woman.hp <= 0) { womanDead = true; state = 'gameover'; failReason = 'Жінку вбили — місію провалено'; AUDIO.stopMusic(); AUDIO.sfx.lose(); }
-    for (const hm of homes) if (aabb(woman.x, woman.y, woman.w, woman.h, hm.x - 16, hm.y - 40, 128, 112)) { womanRescued = true; woman.active = false; spawnBurst(woman.x + 9, woman.y + 11, '#7dff9a', 16, 130, 3); showToast('Жінка вдома! Врятовано ✓'); AUDIO.sfx.win(); }
+    for (const hm of homes) if (aabb(woman.x, woman.y, woman.w, woman.h, hm.x - 16, hm.y - 40, 128, 112)) { womanRescued = true; woman.active = false; spawnBurst(woman.x + 9, woman.y + 11, '#7dff9a', 16, 130, 3); say('Я вдома! Дякую, що врятував мене! 💚'); AUDIO.sfx.win(); }
   }
   ammoCrates = ammoCrates.filter(a => {
     if (WEAPONS[curW].mag !== Infinity && reserve[curW] < MAX_MAGS && aabb(player.x, player.y, player.w, player.h, a.x, a.y, a.w, a.h)) { reserve[curW] = Math.min(MAX_MAGS, reserve[curW] + 1); spawnBurst(a.x + 10, a.y + 8, '#ffd23f', 8, 90, 2); AUDIO.sfx.pickup(); showToast('+ магазин (' + WEAPONS[curW].name + ')'); return false; }
@@ -479,7 +490,7 @@ function update(dt) {
   } }
 
   // timers + particles
-  hurtFlash = Math.max(0, hurtFlash - dt * 1.5); shakeT = Math.max(0, shakeT - dt); invuln = Math.max(0, invuln - dt); toastT = Math.max(0, toastT - dt); swingFx = Math.max(0, swingFx - dt);
+  hurtFlash = Math.max(0, hurtFlash - dt * 1.5); shakeT = Math.max(0, shakeT - dt); invuln = Math.max(0, invuln - dt); toastT = Math.max(0, toastT - dt); swingFx = Math.max(0, swingFx - dt); speechT = Math.max(0, speechT - dt);
   for (let i = particles.length - 1; i >= 0; i--) { const p = particles[i]; p.vy += (p.grav || 0) * dt; p.x += p.vx * dt; p.y += p.vy * dt; p.life -= dt; if (p.life <= 0) particles.splice(i, 1); }
 
   checkQuests();
@@ -492,7 +503,7 @@ function update(dt) {
 function spr(img, x, y) { ctx.drawImage(img, Math.round(x - cam.x), Math.round(y - cam.y)); }
 function draw() {
   ctx.clearRect(0, 0, VIEW_W, VIEW_H);
-  if (state === 'menu') { drawMenu(); return; }
+  if (state === 'title') { ctx.fillStyle = '#16341f'; ctx.fillRect(0, 0, VIEW_W, VIEW_H); return; }   // HTML title overlay covers this
   const bx = cam.x, by = cam.y;
   if (shakeT > 0) { const m = 5 * (shakeT / 0.16); cam.x += (Math.random() * 2 - 1) * m; cam.y += (Math.random() * 2 - 1) * m; }
 
@@ -592,10 +603,10 @@ function draw() {
   else if (hasKey && !womanFreed && lockedHouse) drawPointer(lockedHouse.x + 48, lockedHouse.y + 30, 'БУДИНОК', '#9fe0ff');
   else if (womanFreed && !womanRescued) drawPointer(homes[0].x + 48, homes[0].y, 'ДОДОМУ', '#3fbf60');
   if (boss && !bossDead) drawPointer(boss.x + 15, boss.y, 'БОС', '#ff5a4a');
-  drawHUD(); drawQuests(); drawWeaponBar();
+  drawHUD(); drawQuests(); drawWeaponBar(); drawSpeech();
   if (IS_TOUCH && (state === 'play' || state === 'paused')) drawTouchUI();
   if (state === 'paused') drawPause();
-  else if (state !== 'play') drawOverlay();
+  // win / gameover are shown via the HTML #endScreen overlay (drawn over the frozen frame)
 }
 
 function drawWeaponBar() {
@@ -646,13 +657,13 @@ function drawPointer(wx, wy, label, color) {
   if (sx >= 12 && sx <= VIEW_W - 12 && sy >= 52 && sy <= VIEW_H - 12) {
     ctx.strokeStyle = color; ctx.globalAlpha = 0.5 + 0.4 * pulse; ctx.lineWidth = 3; ctx.beginPath(); ctx.arc(sx, sy - 34, 11 + pulse * 4, 0, 7); ctx.stroke(); ctx.globalAlpha = 1;
     ctx.fillStyle = color; ctx.beginPath(); ctx.moveTo(sx - 6, sy - 23); ctx.lineTo(sx + 6, sy - 23); ctx.lineTo(sx, sy - 15); ctx.closePath(); ctx.fill();
-    ctx.font = 'bold 12px Calibri,sans-serif'; ctx.fillStyle = '#fff'; ctx.fillText(label, sx + 1, sy - 47); ctx.fillStyle = color; ctx.fillText(label, sx, sy - 48);
+    ctx.font = 'bold 12px Trebuchet MS,sans-serif'; ctx.fillStyle = '#fff'; ctx.fillText(label, sx + 1, sy - 47); ctx.fillStyle = color; ctx.fillText(label, sx, sy - 48);
   } else {
     const ccx = VIEW_W / 2, ccy = (VIEW_H + 50) / 2; const ang = Math.atan2(wy - (cam.y + VIEW_H / 2), wx - (cam.x + VIEW_W / 2)); const dx = Math.cos(ang), dy = Math.sin(ang);
     const halfW = VIEW_W / 2 - 30, halfH = (VIEW_H - 50) / 2 - 30; const scale = Math.min(halfW / (Math.abs(dx) || 1e-6), halfH / (Math.abs(dy) || 1e-6));
     const ex = ccx + dx * scale, ey = ccy + dy * scale;
     ctx.translate(ex, ey); ctx.rotate(ang); ctx.fillStyle = color; ctx.beginPath(); ctx.moveTo(15, 0); ctx.lineTo(-6, -8); ctx.lineTo(-6, 8); ctx.closePath(); ctx.fill(); ctx.rotate(-ang);
-    ctx.fillStyle = '#fff'; ctx.font = 'bold 10px Calibri,sans-serif'; ctx.fillText(label, 0, -13);
+    ctx.fillStyle = '#fff'; ctx.font = 'bold 10px Trebuchet MS,sans-serif'; ctx.fillText(label, 0, -13);
   }
   ctx.restore();
 }
@@ -666,16 +677,16 @@ function drawQuests() {
   if (questsCollapsed) {
     questPanel.h = 24;
     ctx.fillStyle = 'rgba(15,16,12,0.42)'; ctx.fillRect(x, y0, questPanel.w, questPanel.h);
-    ctx.font = 'bold 11px Calibri,sans-serif'; ctx.fillStyle = '#ffe08a';
+    ctx.font = 'bold 11px Trebuchet MS,sans-serif'; ctx.fillStyle = '#ffe08a';
     ctx.fillText('ЗАВДАННЯ ' + doneN + '/' + quests.length + '  ▸', x + 7, y0 + 12);
     return;
   }
   const lines = todo.slice(0, 4);
   questPanel.h = 7 + (Math.max(1, lines.length) + 1) * lh;
   ctx.fillStyle = 'rgba(15,16,12,0.42)'; ctx.fillRect(x, y0, questPanel.w, questPanel.h);
-  ctx.font = 'bold 11px Calibri,sans-serif'; ctx.fillStyle = '#ffe08a';
+  ctx.font = 'bold 11px Trebuchet MS,sans-serif'; ctx.fillStyle = '#ffe08a';
   ctx.fillText('ЗАВДАННЯ ' + doneN + '/' + quests.length + '  ▾', x + 7, y0 + 11);
-  ctx.font = '11px Calibri,sans-serif';
+  ctx.font = '11px Trebuchet MS,sans-serif';
   if (lines.length === 0) { ctx.fillStyle = '#9bf09b'; ctx.fillText('✓ усі виконано!', x + 7, y0 + 11 + lh); }
   else lines.forEach((q, i) => { const yy = y0 + 11 + (i + 1) * lh; ctx.fillStyle = '#fff'; const pr = (q.prog && q.prog !== '🔑' && q.prog !== '?') ? '  ' + q.prog : ''; ctx.fillText('• ' + q.label + pr, x + 7, yy); });
 }
@@ -686,23 +697,23 @@ function drawMenu() {
   // floating coins decoration
   for (let i = 0; i < 6; i++) { const cx = 120 + i * 100, cy = 120 + Math.sin(animClock * 2 + i) * 14; ctx.drawImage(IMG.coin, cx - 16, cy - 16); }
   ctx.textAlign = 'center';
-  ctx.fillStyle = '#fff'; ctx.font = 'bold 66px Calibri,sans-serif'; ctx.fillText('☀ PUNK TOWN', VIEW_W / 2 + 2, VIEW_H / 2 - 58);
+  ctx.fillStyle = '#fff'; ctx.font = 'bold 66px Trebuchet MS,sans-serif'; ctx.fillText('☀ PUNK TOWN', VIEW_W / 2 + 2, VIEW_H / 2 - 58);
   ctx.fillStyle = '#3f8f3a'; ctx.fillText('☀ PUNK TOWN', VIEW_W / 2, VIEW_H / 2 - 60);
-  ctx.fillStyle = '#4a5a38'; ctx.font = '20px Calibri,sans-serif';
+  ctx.fillStyle = '#4a5a38'; ctx.font = '20px Trebuchet MS,sans-serif';
   ctx.fillText('Знайди ключ, визволь жінку, приведи ДОДОМУ цілою та здолай боса', VIEW_W / 2, VIEW_H / 2 - 14);
   const blink = 0.5 + 0.5 * Math.sin(animClock * 4);
-  ctx.globalAlpha = 0.5 + 0.5 * blink; ctx.fillStyle = '#e8932a'; ctx.font = 'bold 28px Calibri,sans-serif';
+  ctx.globalAlpha = 0.5 + 0.5 * blink; ctx.fillStyle = '#e8932a'; ctx.font = 'bold 28px Trebuchet MS,sans-serif';
   ctx.fillText('Натисни ПРОБІЛ або клікни, щоб почати', VIEW_W / 2, VIEW_H / 2 + 36); ctx.globalAlpha = 1;
-  ctx.fillStyle = '#5a6a48'; ctx.font = '15px Calibri,sans-serif';
+  ctx.fillStyle = '#5a6a48'; ctx.font = '15px Trebuchet MS,sans-serif';
   ctx.fillText('WASD — рух · Shift — біг · миша/F — стрілянина · 1-6 — зброя · Esc — пауза · M — музика', VIEW_W / 2, VIEW_H - 40);
   ctx.textAlign = 'left';
 }
 
 function drawPause() {
   ctx.fillStyle = 'rgba(20,30,15,0.55)'; ctx.fillRect(0, 0, VIEW_W, VIEW_H);
-  ctx.textAlign = 'center'; ctx.fillStyle = '#fff'; ctx.font = 'bold 56px Calibri,sans-serif';
+  ctx.textAlign = 'center'; ctx.fillStyle = '#fff'; ctx.font = 'bold 56px Trebuchet MS,sans-serif';
   ctx.fillText('ПАУЗА', VIEW_W / 2, VIEW_H / 2 - 10);
-  ctx.font = '22px Calibri,sans-serif'; ctx.fillText('Esc — продовжити', VIEW_W / 2, VIEW_H / 2 + 34);
+  ctx.font = '22px Trebuchet MS,sans-serif'; ctx.fillText('Esc — продовжити', VIEW_W / 2, VIEW_H / 2 + 34);
   ctx.textAlign = 'left';
 }
 
@@ -732,52 +743,71 @@ function drawHomeIndicator() {
   if (sx >= 10 && sx <= VIEW_W - 10 && sy >= 50 && sy <= VIEW_H - 10) {
     ctx.strokeStyle = 'rgba(95,224,122,' + (0.55 + 0.4 * pulse) + ')'; ctx.lineWidth = 3; ctx.beginPath(); ctx.arc(sx, sy - 46, 12 + pulse * 5, 0, 7); ctx.stroke();
     ctx.fillStyle = '#3fbf60'; ctx.beginPath(); ctx.moveTo(sx - 7, sy - 34); ctx.lineTo(sx + 7, sy - 34); ctx.lineTo(sx, sy - 26); ctx.closePath(); ctx.fill();
-    ctx.font = 'bold 14px Calibri,sans-serif'; ctx.fillText('ДІМ', sx, sy - 62);
+    ctx.font = 'bold 14px Trebuchet MS,sans-serif'; ctx.fillText('ДІМ', sx, sy - 62);
   } else {
     const ccx = VIEW_W / 2, ccy = (VIEW_H + 50) / 2; const ang = Math.atan2(hy - (cam.y + VIEW_H / 2), hx - (cam.x + VIEW_W / 2)); const dx = Math.cos(ang), dy = Math.sin(ang);
     const halfW = VIEW_W / 2 - 34, halfH = (VIEW_H - 50) / 2 - 34; const scale = Math.min(halfW / (Math.abs(dx) || 1e-6), halfH / (Math.abs(dy) || 1e-6));
     const ex = ccx + dx * scale, ey = ccy + dy * scale; const dist = Math.round(Math.hypot(hx - (player.x + 9), hy - (player.y + 11)));
     ctx.translate(ex, ey); ctx.rotate(ang); ctx.fillStyle = '#3fbf60'; ctx.beginPath(); ctx.moveTo(16, 0); ctx.lineTo(-6, -9); ctx.lineTo(-6, 9); ctx.closePath(); ctx.fill(); ctx.rotate(-ang);
-    ctx.fillStyle = '#bff5cc'; ctx.font = 'bold 11px Calibri,sans-serif'; ctx.fillText('ДІМ ' + dist, 0, -16);
+    ctx.fillStyle = '#bff5cc'; ctx.font = 'bold 11px Trebuchet MS,sans-serif'; ctx.fillText('ДІМ ' + dist, 0, -16);
   }
   ctx.restore();
 }
 
+function drawSpeech() {
+  if (speechT <= 0 || !speech) return;
+  const w = Math.min(560, VIEW_W - 40), h = 70, x = VIEW_W / 2 - w / 2, y = VIEW_H - h - (IS_TOUCH ? 96 : 16);
+  ctx.globalAlpha = Math.min(1, speechT * 2);
+  ctx.fillStyle = 'rgba(14,28,20,.92)'; rr(x, y, w, h, 14); ctx.fill();
+  ctx.strokeStyle = 'rgba(224,81,143,.7)'; ctx.lineWidth = 2; rr(x, y, w, h, 14); ctx.stroke();
+  // little woman portrait
+  ctx.save(); ctx.translate(x + 34, y + 46); ctx.scale(1.2, 1.2); ctx.drawImage(IMG.woman[0], -12, -22); ctx.restore();
+  ctx.fillStyle = '#ff9aa2'; ctx.font = 'bold 15px Trebuchet MS,sans-serif'; ctx.textAlign = 'left'; ctx.textBaseline = 'alphabetic';
+  ctx.fillText('Жінка', x + 64, y + 24);
+  ctx.fillStyle = '#f0f6f1'; ctx.font = '15px Trebuchet MS,sans-serif';
+  ctx.fillText(speech, x + 64, y + 48);
+  ctx.globalAlpha = 1;
+}
+
 function drawHUD() {
-  ctx.fillStyle = 'rgba(255,252,240,0.86)'; ctx.fillRect(0, 0, VIEW_W, 40);
-  ctx.fillStyle = 'rgba(0,0,0,0.08)'; ctx.fillRect(0, 39, VIEW_W, 2);
+  ctx.fillStyle = 'rgba(20,40,28,0.72)'; rr(8, 6, VIEW_W - 16, 36, 12); ctx.fill();   // rounded ForestQuest-style panel
   // health + stamina — identical size bars
-  ctx.lineWidth = 2; ctx.strokeStyle = '#7a5';
-  ctx.strokeRect(14, 7, 190, 11);
-  ctx.fillStyle = health > 60 ? '#4caf50' : health > 30 ? '#ffa726' : '#ef5350'; ctx.fillRect(15, 8, health / 100 * 188, 9);
-  ctx.strokeStyle = '#7a5'; ctx.strokeRect(14, 22, 190, 11);
-  ctx.fillStyle = stamina > 25 ? '#42a5f5' : '#ab47bc'; ctx.fillRect(15, 23, stamina / 100 * 188, 9);
-  ctx.textBaseline = 'middle'; ctx.fillStyle = '#5a4a32'; ctx.font = 'bold 18px Calibri,sans-serif';
-  ctx.fillText('♥' + lives, 214, 16);
+  ctx.lineWidth = 2; ctx.strokeStyle = 'rgba(0,0,0,.35)';
+  rr(14, 8, 190, 10, 5); ctx.stroke();
+  ctx.fillStyle = health > 60 ? '#7CFC68' : health > 30 ? '#ffd23f' : '#ff6f6f'; rr(15, 9, health / 100 * 188, 8, 4); ctx.fill();
+  ctx.strokeStyle = 'rgba(0,0,0,.35)'; rr(14, 23, 190, 9, 4); ctx.stroke();
+  ctx.fillStyle = stamina > 25 ? '#56b8ff' : '#c46bff'; rr(15, 24, stamina / 100 * 188, 7, 3); ctx.fill();
+  ctx.textBaseline = 'middle'; ctx.fillStyle = '#ff9aa2'; ctx.font = 'bold 18px Trebuchet MS,sans-serif';
+  ctx.fillText('♥' + lives, 214, 18);
   // current weapon: icon + name + ammo (∞ for the bat)
   const w = WEAPONS[curW];
-  ctx.drawImage(IMG.wicon[curW], 246, 6, 28, 28);
-  ctx.textAlign = 'left'; ctx.font = 'bold 14px Calibri,sans-serif'; ctx.fillStyle = '#7a5a2a'; ctx.fillText(w.name, 278, 12);
-  ctx.fillStyle = wAmmo[curW] > 0 ? '#c79a1a' : '#d33'; ctx.font = 'bold 13px Calibri,sans-serif';
-  ctx.fillText(w.mag === Infinity ? '⦿ ∞' : ('⦿ ' + wAmmo[curW] + '/' + w.mag), 278, 28);
-  if (w.mag !== Infinity) for (let m = 0; m < MAX_MAGS; m++) { ctx.fillStyle = m < reserve[curW] ? '#c79a1a' : 'rgba(0,0,0,0.18)'; ctx.fillRect(360 + m * 9, 24, 7, 8); }
-  // coins: coin icon + count
-  ctx.drawImage(IMG.coin, VIEW_W - 108, 0, 22, 22);
-  ctx.textAlign = 'left'; ctx.font = 'bold 20px Calibri,sans-serif'; ctx.fillStyle = '#c79a1a'; ctx.fillText('' + totalCoins, VIEW_W - 84, 12);
-  ctx.textAlign = 'right'; ctx.font = 'bold 14px Calibri,sans-serif'; ctx.fillStyle = '#6a8f3a'; ctx.fillText('☠ ' + kills, VIEW_W - 14, 28); ctx.textAlign = 'left';
-  if (toastT > 0) { ctx.globalAlpha = Math.min(1, toastT); ctx.font = 'bold 22px Calibri,sans-serif'; ctx.textAlign = 'center'; ctx.fillStyle = '#fff'; ctx.fillText(toast, VIEW_W / 2 + 1, 71); ctx.fillStyle = '#e8932a'; ctx.fillText(toast, VIEW_W / 2, 70); ctx.textAlign = 'left'; ctx.globalAlpha = 1; }
+  ctx.drawImage(IMG.wicon[curW], 248, 8, 26, 26);
+  ctx.textAlign = 'left'; ctx.font = 'bold 14px Trebuchet MS,sans-serif'; ctx.fillStyle = '#fff'; ctx.fillText(w.name, 278, 14);
+  ctx.fillStyle = wAmmo[curW] > 0 ? '#ffd23f' : '#ff7a7a'; ctx.font = 'bold 13px Trebuchet MS,sans-serif';
+  ctx.fillText(w.mag === Infinity ? '⦿ ∞' : ('⦿ ' + wAmmo[curW] + '/' + w.mag), 278, 30);
+  if (w.mag !== Infinity) for (let m = 0; m < MAX_MAGS; m++) { ctx.fillStyle = m < reserve[curW] ? '#ffd23f' : 'rgba(255,255,255,0.18)'; ctx.fillRect(362 + m * 9, 26, 7, 7); }
+  // coins + kills
+  ctx.drawImage(IMG.coin, VIEW_W - 104, 2, 22, 22);
+  ctx.textAlign = 'left'; ctx.font = 'bold 18px Trebuchet MS,sans-serif'; ctx.fillStyle = '#ffd23f'; ctx.fillText('' + totalCoins, VIEW_W - 80, 14);
+  ctx.textAlign = 'right'; ctx.font = 'bold 13px Trebuchet MS,sans-serif'; ctx.fillStyle = '#9bf09b'; ctx.fillText('☠ ' + kills, VIEW_W - 14, 30); ctx.textAlign = 'left';
+  if (toastT > 0) { ctx.globalAlpha = Math.min(1, toastT); ctx.font = 'bold 22px Trebuchet MS,sans-serif'; ctx.textAlign = 'center'; ctx.fillStyle = '#fff'; ctx.fillText(toast, VIEW_W / 2 + 1, 71); ctx.fillStyle = '#e8932a'; ctx.fillText(toast, VIEW_W / 2, 70); ctx.textAlign = 'left'; ctx.globalAlpha = 1; }
 }
 
 function drawOverlay() {
   ctx.fillStyle = state === 'win' ? 'rgba(40,80,40,0.55)' : 'rgba(60,30,30,0.6)'; ctx.fillRect(0, 0, VIEW_W, VIEW_H);
-  ctx.textAlign = 'center'; ctx.fillStyle = state === 'win' ? '#aef5b0' : '#ff9a9a'; ctx.font = 'bold 60px Calibri,sans-serif';
+  ctx.textAlign = 'center'; ctx.fillStyle = state === 'win' ? '#aef5b0' : '#ff9a9a'; ctx.font = 'bold 60px Trebuchet MS,sans-serif';
   ctx.fillText(state === 'win' ? 'ПЕРЕМОГА!' : (womanDead ? 'МІСІЮ ПРОВАЛЕНО' : 'ГРУ ЗАВЕРШЕНО'), VIEW_W / 2, VIEW_H / 2 - 16);
-  ctx.fillStyle = '#fff'; ctx.font = '22px Calibri,sans-serif';
+  ctx.fillStyle = '#fff'; ctx.font = '22px Trebuchet MS,sans-serif';
   const sub = state === 'win' ? 'Усі завдання виконано! Вбито: ' + kills : (failReason || 'Спробуй ще — нова мапа чекає');
   ctx.fillText(sub + '   —   R: нова гра', VIEW_W / 2, VIEW_H / 2 + 34);
   ctx.textAlign = 'left';
 }
 
 let last = 0;
-function frame(t) { const dt = Math.min((t - last) / 1000, 0.05); last = t; update(dt); draw(); requestAnimationFrame(frame); }
+function frame(t) {
+  const dt = Math.min((t - last) / 1000, 0.05); last = t;
+  update(dt); draw();
+  if ((state === 'win' || state === 'gameover') && !endShown) { endShown = true; showEndScreen(); }
+  requestAnimationFrame(frame);
+}
 requestAnimationFrame(t => { last = t; frame(t); });

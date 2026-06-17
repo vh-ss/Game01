@@ -1,52 +1,66 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="uk">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
-<title>Punk Town</title>
+<title>Панк-Місто 🧟</title>
 <style>
-  html, body {
-    margin: 0; height: 100%;
-    background: linear-gradient(160deg, #aee6ff 0%, #cdeeb0 100%);
-    display: flex; flex-direction: column;
-    align-items: center; justify-content: center;
-    font-family: Calibri, system-ui, sans-serif; color: #4a5a38;
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  html, body { height: 100%; overflow: hidden; background: #10241a; font-family: 'Trebuchet MS', 'Segoe UI', sans-serif; }
+  #wrap { position: fixed; inset: 0; display: flex; align-items: center; justify-content: center; background: radial-gradient(circle at 50% 35%, #16341f, #07120c 80%); }
+  #game { display: block; image-rendering: auto; max-width: 100vw; max-height: 100vh; touch-action: none; box-shadow: 0 12px 40px rgba(0,0,0,.5); border-radius: 6px; }
+
+  .overlay {
+    position: fixed; inset: 0; display: flex; flex-direction: column; align-items: center;
+    justify-content: center; text-align: center; color: #fff; z-index: 10; padding: 16px;
+    background: radial-gradient(circle at 50% 35%, rgba(40,70,55,.9), rgba(8,18,13,.97));
+    backdrop-filter: blur(2px);
   }
-  h1 {
-    margin: 0 0 10px; font-weight: 800; letter-spacing: 3px; font-size: 32px;
-    color: #3f8f3a; text-shadow: 2px 2px 0 #fff, 3px 3px 0 rgba(0,0,0,0.12);
+  .overlay h1 { font-size: clamp(32px,7vw,68px); text-shadow: 0 4px 0 #1c3b28, 0 8px 18px rgba(0,0,0,.5); letter-spacing: 1px; }
+  .overlay p { font-size: clamp(14px,2.3vw,19px); margin: 10px 0; max-width: 620px; line-height: 1.55; color: #e7f5ea; }
+  .keys { margin: 16px 0 6px; display: flex; gap: 12px; flex-wrap: wrap; justify-content: center; }
+  .key { background: rgba(255,255,255,.1); border: 1px solid rgba(255,255,255,.22); border-radius: 10px; padding: 7px 12px; font-size: 13px; }
+  .key b { display: inline-block; background: #fff; color: #234; border-radius: 6px; padding: 2px 7px; margin-right: 5px; box-shadow: 0 2px 0 #aab; }
+  .btn {
+    margin-top: 22px; font-size: 22px; font-weight: bold; color: #5a2436; cursor: pointer;
+    background: linear-gradient(#ff9aa2,#ff6f86); border: none; border-radius: 14px; padding: 14px 40px;
+    box-shadow: 0 6px 0 #c84a63, 0 10px 20px rgba(0,0,0,.35); transition: transform .08s, box-shadow .08s;
   }
-  canvas {
-    background: #6cbf4a;
-    image-rendering: pixelated;
-    border-radius: 6px;
-    box-shadow: 0 10px 30px rgba(60,120,40,0.35), 0 0 0 3px #fff;
-    max-width: 100vw; max-height: 78vh;
-    touch-action: none;
-  }
-  p { margin: 12px 0 0; font-size: 13px; color: #5a6a48; max-width: 760px; text-align: center; }
-  /* phones: maximise the canvas, hide chrome */
-  @media (max-width: 820px), (pointer: coarse) {
-    html, body { overflow: hidden; }
-    body { justify-content: center; padding: 0; background: #000; }
-    h1, p { display: none; }
-    canvas { max-width: none; max-height: none; border-radius: 0; box-shadow: none; }
-  }
-  b { color: #3f7a2f; }
-  kbd {
-    background:#fff;border:1px solid #b9d9a0;border-radius:4px;
-    padding:1px 6px;font-family:inherit;color:#4a5a38;box-shadow:0 1px 0 #cfe3bc;
-  }
+  .btn:hover { transform: translateY(-2px); }
+  .btn:active { transform: translateY(4px); box-shadow: 0 2px 0 #c84a63; }
+  .hidden { display: none !important; }
+  #endScreen h1.lose { color: #ff9a9a; }
+  #endScreen h1.win { color: #aef5b0; }
 </style>
 </head>
 <body>
-  <h1>☀ PUNK TOWN</h1>
-  <canvas id="game" width="760" height="600"></canvas>
-  <p><kbd>↑↓←→</kbd> / <kbd>WASD</kbd> рух &nbsp;·&nbsp; <kbd>Shift</kbd> біг &nbsp;·&nbsp; <kbd>click</kbd> / <kbd>F</kbd> стрілянина &nbsp;·&nbsp; <kbd>1</kbd>–<kbd>6</kbd> зброя (бита, вогнемет…) &nbsp;·&nbsp; <kbd>Esc</kbd> пауза &nbsp;·&nbsp; <kbd>M</kbd> музика<br>
-     Виконай <b>3 завдання</b> (список угорі зліва) — щоразу <b>нова мапа</b>. Відстрілюй зомбі (випадає зброя), хапай <b>ящики набоїв</b>, лікуйся <b>ДОДОМУ</b>.</p>
-  <script src="mapgen.js"></script>
-  <script src="sprites.js"></script>
-  <script src="audio.js"></script>
-  <script src="game.js"></script>
+<div id="wrap"><canvas id="game" width="760" height="600"></canvas></div>
+
+<div id="titleScreen" class="overlay">
+  <h1>🧟 ПАНК-МІСТО</h1>
+  <p>Місто захопили зомбі й банди грабіжників. Знайди <b>ключ</b>, визволи <b>жінку</b> із замкненого будинку
+     і приведи її <b>ДОДОМУ</b> цілою. А ще — здолай <b>боса</b>. Удачі, вижильцю!</p>
+  <div class="keys">
+    <div class="key"><b>W A S D</b>рух</div>
+    <div class="key"><b>Shift</b>біг</div>
+    <div class="key"><b>миша / F</b>стрілянина</div>
+    <div class="key"><b>1–6</b>зброя</div>
+    <div class="key"><b>Q</b>журнал</div>
+    <div class="key"><b>Esc</b>пауза</div>
+  </div>
+  <p style="font-size:13px;opacity:.85">На телефоні: лівий джойстик — рух, кнопка «ВОГОНЬ» — стрілянина.</p>
+  <button class="btn" id="startBtn">🔫 Почати</button>
+</div>
+
+<div id="endScreen" class="overlay hidden">
+  <h1 id="endTitle">Кінець</h1>
+  <p id="endText"></p>
+  <button class="btn" id="againBtn">↺ Зіграти знову</button>
+</div>
+
+<script src="mapgen.js"></script>
+<script src="sprites.js"></script>
+<script src="audio.js"></script>
+<script src="game.js"></script>
 </body>
 </html>
