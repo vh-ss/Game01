@@ -142,9 +142,44 @@
     return c;
   }
 
+  // WOMAN NPC (24×32) — to rescue & escort home
+  function woman(step) {
+    const [c, x] = make(24, 32);
+    const ll = step === 1 ? 2 : 0, rl = step === 2 ? 2 : 0;
+    shadow(x, 12, 30, 8, 3);
+    x.fillStyle = '#e8c9a0'; x.fillRect(8, 24, 3, 6 - ll); x.fillRect(13, 24, 3, 6 - rl);   // legs
+    x.fillStyle = '#5a3b2a'; x.fillRect(7, 29 - ll, 5, 2); x.fillRect(12, 29 - rl, 5, 2);    // shoes
+    x.fillStyle = '#e0518f'; x.fillRect(5, 14, 14, 12); x.fillRect(4, 22, 16, 4);            // dress + skirt
+    x.fillStyle = '#f06fa6'; x.fillRect(6, 15, 12, 4);
+    x.fillStyle = '#e0518f'; x.fillRect(3, 15, 3, 7); x.fillRect(18, 15, 3, 7);              // arms
+    x.fillStyle = '#f2c39a'; x.fillRect(3, 21, 3, 2); x.fillRect(18, 21, 3, 2);
+    x.fillStyle = '#7a4a28'; x.fillRect(6, 3, 12, 13);                                       // long hair
+    x.fillStyle = '#f2c39a'; x.fillRect(8, 6, 8, 7);                                         // face
+    x.fillStyle = '#7a4a28'; x.fillRect(6, 3, 12, 3); x.fillRect(6, 3, 2, 13); x.fillRect(16, 3, 2, 13);
+    x.fillStyle = '#222'; x.fillRect(9, 8, 2, 2); x.fillRect(13, 8, 2, 2);
+    x.fillStyle = '#c0392b'; x.fillRect(11, 11, 2, 1);
+    return c;
+  }
+  function key() {
+    const [c, x] = make(24, 24); shadow(x, 11, 20, 7, 2);
+    x.fillStyle = '#ffd23f'; x.beginPath(); x.arc(8, 12, 5, 0, 7); x.fill();
+    x.fillStyle = '#caa15a'; x.beginPath(); x.arc(8, 12, 2.4, 0, 7); x.fill();
+    x.fillStyle = '#ffd23f'; x.fillRect(12, 10, 9, 3); x.fillRect(18, 13, 2, 3); x.fillRect(15, 13, 2, 2);
+    x.fillStyle = '#fff7cc'; x.fillRect(5, 9, 2, 2);
+    return c;
+  }
+  function lock() {
+    const [c, x] = make(20, 22);
+    x.strokeStyle = '#9aa'; x.lineWidth = 3; x.beginPath(); x.arc(10, 9, 4, Math.PI, 2 * Math.PI); x.stroke();
+    x.fillStyle = '#caa11a'; x.fillRect(4, 9, 12, 11); x.fillStyle = '#ffd23f'; x.fillRect(5, 10, 10, 9);
+    x.fillStyle = '#7a5a10'; x.fillRect(9, 13, 2, 4);
+    return c;
+  }
+
   window.SPRITES = {
     ammo: ammo(), tilemap: tilemap(),
     player: [player(0), player(1), player(2)], enemy: [enemy(0), enemy(1), enemy(2)],
+    woman: [woman(0), woman(1), woman(2)], key: key(), lock: lock(),
     coin: coin(), home: home(),
     house1: building('#ff9aa2', '#e87f88', '#d65a6a', '#b8485a', 96, 96),
     house2: building('#9ad0ff', '#7fb6e8', '#4f8fd6', '#3f76b8', 96, 96),

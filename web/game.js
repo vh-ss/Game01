@@ -12,7 +12,7 @@ const SPEED = 110, RUN_MULT = 1.8;
 const STAM_MAX = 100, STAM_DRAIN = 32, STAM_REGEN = 10, STAM_REGEN_HOME = 50;
 const ZSPEED = 48, ZCHASE = 80;
 const ZHP = 4, LOOT_CHANCE = 0.3;
-const MAX_ZOMBIES = 22, RESPAWN_EVERY = 3.0;
+const MAX_ZOMBIES = 44, RESPAWN_EVERY = 2.2;
 // some zombies are armed (different guns); each fires single shots — max 1 bullet in flight
 const ARMED_CHANCE = 0.3;
 const ZWEAPONS = [
@@ -72,38 +72,40 @@ let ammoCrates = [];
 let health = 100, lives = 3, totalCoins = 0, kills = 0, state = 'menu', stamina = STAM_MAX, animClock = 0, respawnT = RESPAWN_EVERY;
 const reachCells = (LEVEL.reach || []).filter(([c, r]) => r >= 0 && r < ROWS && c >= 0 && c < COLS && !solid[r][c]);
 
-// ---- quests: 3 random objectives; finish them all to win ----
-const QUEST_ITEMS = [
-  { name: 'Ключ від міста', color: '#ffd23f' }, { name: 'Загублений амулет', color: '#c46bff' },
-  { name: 'Плюшевий ведмедик', color: '#ff9a4d' }, { name: 'Стара мапа скарбів', color: '#56b8ff' },
-  { name: 'Золотий кубок', color: '#ffe08a' },
-];
+// ---- campaign: find key → free woman from locked house → escort her home; always also kill the boss ----
 const BOSS_NAMES = ['Гнилий Король', 'Зомбі-Велетень', 'Лорд Гнилля', 'Старий Грець'];
-let findItem = null, boss = null, bossDead = false;
+const ri = n => Math.floor(Math.random() * n);
+let boss = null, bossDead = false;
+let keyItem = null, lockedHouse = null, woman = null;
+let hasKey = false, womanFreed = false, womanRescued = false, womanDead = false, failReason = '';
 const quests = [];
-function farReachable(minD) {
+const usedSpots = [];
+function questSpot(minFromPlayer) {
   const cells = reachCells.slice();
-  for (let i = cells.length - 1; i > 0; i--) { const j = Math.floor(Math.random() * (i + 1)); [cells[i], cells[j]] = [cells[j], cells[i]]; }
-  for (const [c, r] of cells) { const wx = c * TS, wy = r * TS; if (Math.hypot(wx - player.x, wy - player.y) >= minD) return [wx + 6, wy + 6]; }
-  return [player.x + 200, player.y];
+  for (let i = cells.length - 1; i > 0; i--) { const j = ri(i + 1);[cells[i], cells[j]] = [cells[j], cells[i]]; }
+  for (const [c, r] of cells) { const wx = c * TS, wy = r * TS; if (Math.hypot(wx - player.x, wy - player.y) < minFromPlayer) continue; if (usedSpots.every(s => Math.hypot(s[0] - wx, s[1] - wy) > 260)) { usedSpots.push([wx, wy]); return [wx, wy]; } }
+  return [player.x + 300, player.y];
 }
-(function buildQuests() {
-  const pool = ['coins', 'kills', 'find', 'boss'];
-  for (let i = pool.length - 1; i > 0; i--) { const j = Math.floor(Math.random() * (i + 1)); [pool[i], pool[j]] = [pool[j], pool[i]]; }
-  for (const type of pool.slice(0, 3)) {
-    if (type === 'coins') quests.push({ type, target: Math.min(coins.length, 8 + Math.floor(Math.random() * 6)), label: 'Зібрати монети' });
-    else if (type === 'kills') quests.push({ type, target: 10 + Math.floor(Math.random() * 11), label: 'Знищити зомбі' });
-    else if (type === 'find') { const it = QUEST_ITEMS[Math.floor(Math.random() * QUEST_ITEMS.length)]; const s = farReachable(280); findItem = { x: s[0], y: s[1], name: it.name, color: it.color, got: false }; quests.push({ type, label: 'Знайти: ' + it.name }); }
-    else if (type === 'boss') { const s = farReachable(340); boss = mkZombie(s[0], s[1]); boss.isBoss = true; boss.hp = 22; boss.maxhp = 22; boss.w = 30; boss.h = 34; boss.name = BOSS_NAMES[Math.floor(Math.random() * BOSS_NAMES.length)]; boss.armed = true; boss.zw = 1; zombies.push(boss); quests.push({ type, label: 'Здолати боса: ' + boss.name }); }
-  }
+(function buildCampaign() {
+  const ks = questSpot(640); keyItem = { x: ks[0] + 6, y: ks[1] + 6, got: false };
+  quests.push({ type: 'key', label: 'Знайти ключ від будинку' });
+  const hsp = questSpot(900); lockedHouse = { x: hsp[0], y: hsp[1] };
+  woman = { x: hsp[0] + 38, y: hsp[1] + 60, w: 18, h: 22, hp: 40, maxhp: 40, flash: 0, invuln: 0, frame: 0, walkT: 0, active: false };
+  quests.push({ type: 'rescue', label: 'Визволити жінку і привести ДОДОМУ' });
+  const bs = questSpot(700); boss = mkZombie(bs[0], bs[1]); boss.isBoss = true; boss.hp = 24; boss.maxhp = 24; boss.w = 30; boss.h = 34; boss.name = BOSS_NAMES[ri(BOSS_NAMES.length)]; boss.armed = true; boss.zw = 1; zombies.push(boss);
+  quests.push({ type: 'boss', label: 'Здолати боса: ' + boss.name });
+  // one random side objective for variety
+  if (Math.random() < 0.5) quests.push({ type: 'coins', target: Math.min(coins.length, 10 + ri(8)), label: 'Зібрати монети' });
+  else quests.push({ type: 'kills', target: 12 + ri(12), label: 'Знищити зомбі' });
 })();
 function checkQuests() {
   let all = true;
   for (const q of quests) {
-    if (q.type === 'coins') { q.done = totalCoins >= q.target; q.prog = Math.min(totalCoins, q.target) + '/' + q.target; }
-    else if (q.type === 'kills') { q.done = kills >= q.target; q.prog = Math.min(kills, q.target) + '/' + q.target; }
-    else if (q.type === 'find') { q.done = !!(findItem && findItem.got); q.prog = q.done ? '✓' : '?'; }
+    if (q.type === 'key') { q.done = hasKey; q.prog = hasKey ? '✓' : '🔑'; }
+    else if (q.type === 'rescue') { q.done = womanRescued; q.prog = womanRescued ? '✓' : (womanFreed ? 'веди ДОДОМУ' : (hasKey ? 'відчини будинок' : 'потрібен ключ')); }
     else if (q.type === 'boss') { q.done = bossDead; q.prog = q.done ? '✓' : (boss && boss.hp > 0 ? Math.ceil(boss.hp) + 'hp' : ''); }
+    else if (q.type === 'coins') { q.done = totalCoins >= q.target; q.prog = Math.min(totalCoins, q.target) + '/' + q.target; }
+    else if (q.type === 'kills') { q.done = kills >= q.target; q.prog = Math.min(kills, q.target) + '/' + q.target; }
     if (!q.done) all = false;
   }
   if (all && state === 'play') { state = 'win'; AUDIO.stopMusic(); AUDIO.sfx.win(); }
@@ -327,8 +329,22 @@ function update(dt) {
 
   // pickups
   coins = coins.filter(co => { if (aabb(player.x, player.y, player.w, player.h, co.x - 10, co.y - 10, 28, 28)) { totalCoins++; spawnBurst(co.x, co.y, '#ffd23f', 8, 80, 2); AUDIO.sfx.coin(); return false; } return true; });
-  // quest find-item pickup
-  if (findItem && !findItem.got && aabb(player.x, player.y, player.w, player.h, findItem.x - 6, findItem.y - 6, 28, 28)) { findItem.got = true; AUDIO.sfx.pickup(); spawnBurst(findItem.x + 4, findItem.y + 4, findItem.color, 16, 140, 3); showToast('Знайдено: ' + findItem.name + '!'); }
+  // key pickup
+  if (keyItem && !keyItem.got && aabb(player.x, player.y, player.w, player.h, keyItem.x - 6, keyItem.y - 6, 28, 28)) { keyItem.got = true; hasKey = true; AUDIO.sfx.pickup(); spawnBurst(keyItem.x + 6, keyItem.y + 6, '#ffd23f', 16, 140, 3); showToast('Знайдено ключ! Іди до будинку 🏚'); }
+  // unlock the house with the key
+  if (hasKey && !womanFreed && lockedHouse && aabb(player.x, player.y, player.w, player.h, lockedHouse.x - 10, lockedHouse.y, 116, 110)) {
+    womanFreed = true; woman.active = true; AUDIO.sfx.pickup(); spawnBurst(lockedHouse.x + 48, lockedHouse.y + 60, '#ffd23f', 20, 160, 3); showToast('Жінку звільнено! Веди її ДОДОМУ 🏠');
+  }
+  // woman: follow, take damage, escort, or die
+  if (woman && woman.active && !womanRescued && !womanDead) {
+    woman.invuln = Math.max(0, woman.invuln - dt); woman.flash = Math.max(0, woman.flash - dt);
+    const wcx = woman.x + woman.w / 2, wcy = woman.y + woman.h / 2, pcx2 = player.x + player.w / 2, pcy2 = player.y + player.h / 2;
+    const dd = Math.hypot(pcx2 - wcx, pcy2 - wcy);
+    if (dd > 42) { const sp = 125 * dt; tryMove(woman, (pcx2 - wcx) / dd * sp, (pcy2 - wcy) / dd * sp); woman.walkT += dt; woman.frame = 1 + (Math.floor(woman.walkT * 8) % 2); } else woman.frame = 0;
+    for (const z of zombies) if (woman.invuln <= 0 && aabb(woman.x, woman.y, woman.w, woman.h, z.x, z.y, z.w, z.h)) { woman.hp -= 14; woman.invuln = 0.6; woman.flash = 0.14; spawnBurst(wcx, wcy, '#e0518f', 6, 90, 2); break; }
+    if (woman.hp <= 0) { womanDead = true; state = 'gameover'; failReason = 'Жінку вбили — місію провалено'; AUDIO.stopMusic(); AUDIO.sfx.lose(); }
+    for (const hm of homes) if (aabb(woman.x, woman.y, woman.w, woman.h, hm.x - 16, hm.y - 40, 128, 112)) { womanRescued = true; woman.active = false; spawnBurst(woman.x + 9, woman.y + 11, '#7dff9a', 16, 130, 3); showToast('Жінка вдома! Врятовано ✓'); AUDIO.sfx.win(); }
+  }
   ammoCrates = ammoCrates.filter(a => { if (wAmmo[curW] < WEAPONS[curW].mag && aabb(player.x, player.y, player.w, player.h, a.x, a.y, a.w, a.h)) { wAmmo[curW] = WEAPONS[curW].mag; spawnBurst(a.x + 10, a.y + 8, '#ffd23f', 8, 90, 2); AUDIO.sfx.pickup(); showToast('+ набої'); return false; } return true; });
   for (let i = loot.length - 1; i >= 0; i--) { const a = loot[i]; if (aabb(player.x, player.y, player.w, player.h, a.x, a.y, a.w, a.h)) {
     const onlyPistol = owned[0] && !owned[1] && !owned[2] && !owned[3];   // still on the starter pistol?
@@ -367,13 +383,30 @@ function draw() {
   for (const a of ammoCrates) spr(IMG.ammo, a.x, a.y + Math.sin(animClock * 3 + a.x) * 1.5);
   for (const a of loot) { const lx = Math.round(a.x - cam.x), ly = Math.round(a.y - cam.y + Math.sin(animClock * 4 + a.x) * 2); ctx.fillStyle = WEAPONS[a.weapon].color; ctx.globalAlpha = .35; ctx.fillRect(lx - 3, ly - 3, a.w + 6, a.h + 6); ctx.globalAlpha = 1; ctx.fillStyle = '#8a5a2e'; ctx.fillRect(lx, ly, a.w, a.h); ctx.fillStyle = WEAPONS[a.weapon].color; ctx.fillRect(lx + 3, ly + 6, a.w - 6, 4); }
 
-  // quest find-item: glowing pulsing chest
-  if (findItem && !findItem.got) {
-    const ix = Math.round(findItem.x - cam.x), iy = Math.round(findItem.y - cam.y + Math.sin(animClock * 3) * 2);
+  // locked house (where the woman is held) — house + padlock until freed
+  if (lockedHouse) {
+    spr(IMG.house1, lockedHouse.x, lockedHouse.y);
+    if (!womanFreed) {
+      const lx = Math.round(lockedHouse.x + 48 - cam.x), ly = Math.round(lockedHouse.y + 50 - cam.y);
+      const pulse = 0.5 + 0.5 * Math.sin(animClock * 4);
+      ctx.save(); ctx.globalAlpha = 0.3 + 0.3 * pulse; ctx.fillStyle = '#ffd23f'; ctx.beginPath(); ctx.arc(lx, ly, 18, 0, 7); ctx.fill(); ctx.globalAlpha = 1; ctx.restore();
+      ctx.drawImage(IMG.lock, lx - 10, ly - 11);
+    }
+  }
+  // the key
+  if (keyItem && !keyItem.got) {
     const pulse = 0.5 + 0.5 * Math.sin(animClock * 5);
-    ctx.save(); ctx.globalAlpha = 0.4 + 0.4 * pulse; ctx.fillStyle = findItem.color; ctx.beginPath(); ctx.arc(ix + 8, iy + 8, 14, 0, 7); ctx.fill(); ctx.globalAlpha = 1; ctx.restore();
-    ctx.fillStyle = '#6a4a24'; ctx.fillRect(ix, iy + 2, 16, 12); ctx.fillStyle = findItem.color; ctx.fillRect(ix + 1, iy + 3, 14, 5); ctx.fillStyle = '#ffd23f'; ctx.fillRect(ix + 6, iy + 7, 4, 3);
-    ctx.fillStyle = '#fff'; ctx.font = 'bold 12px Calibri'; ctx.textAlign = 'center'; ctx.fillText('?', ix + 8, iy - 6); ctx.textAlign = 'left';
+    const kx = Math.round(keyItem.x - cam.x), ky = Math.round(keyItem.y - cam.y + Math.sin(animClock * 3) * 2);
+    ctx.save(); ctx.globalAlpha = 0.35 + 0.35 * pulse; ctx.fillStyle = '#ffd23f'; ctx.beginPath(); ctx.arc(kx + 8, ky + 8, 15, 0, 7); ctx.fill(); ctx.globalAlpha = 1; ctx.restore();
+    ctx.drawImage(IMG.key, kx - 4, ky - 4);
+  }
+  // the woman
+  if (woman && woman.active && !womanRescued) {
+    spr(IMG.woman[woman.frame], woman.x - 3, woman.y - 8);
+    if (woman.flash > 0) { ctx.globalAlpha = woman.flash / 0.14 * 0.7; ctx.fillStyle = '#fff'; ctx.fillRect(Math.round(woman.x - 3 - cam.x), Math.round(woman.y - 8 - cam.y), 24, 32); ctx.globalAlpha = 1; }
+    const hx = Math.round(woman.x - cam.x), hy = Math.round(woman.y - 12 - cam.y);
+    ctx.fillStyle = 'rgba(0,0,0,.55)'; ctx.fillRect(hx - 1, hy, woman.w + 2, 4); ctx.fillStyle = '#e0518f'; ctx.fillRect(hx, hy + 1, woman.w * Math.max(0, woman.hp) / woman.maxhp, 2);
+    ctx.fillStyle = '#fff'; ctx.font = 'bold 9px Calibri'; ctx.textAlign = 'center'; ctx.fillText('♀', woman.x + 9 - cam.x, hy - 4); ctx.textAlign = 'left';
   }
 
   for (const z of zombies) {
@@ -411,8 +444,10 @@ function draw() {
   cam.x = bx; cam.y = by;
   drawAtmosphere(); drawBullets();
   if (hurtFlash > 0) { ctx.fillStyle = 'rgba(255,40,40,' + (0.35 * hurtFlash).toFixed(3) + ')'; ctx.fillRect(0, 0, VIEW_W, VIEW_H); }
-  drawPointer(homes[0].x + 48, homes[0].y, 'ДІМ', '#3fbf60');
-  if (findItem && !findItem.got && Math.hypot(findItem.x - player.x, findItem.y - player.y) < 340) drawPointer(findItem.x + 8, findItem.y, '?', findItem.color);
+  // objective arrow guides the current step of the campaign
+  if (!hasKey && keyItem) drawPointer(keyItem.x + 8, keyItem.y, 'КЛЮЧ', '#ffd23f');
+  else if (hasKey && !womanFreed && lockedHouse) drawPointer(lockedHouse.x + 48, lockedHouse.y + 30, 'БУДИНОК', '#9fe0ff');
+  else if (womanFreed && !womanRescued) drawPointer(homes[0].x + 48, homes[0].y, 'ДОДОМУ', '#3fbf60');
   if (boss && !bossDead) drawPointer(boss.x + 15, boss.y, 'БОС', '#ff5a4a');
   drawHUD(); drawQuests();
   if (IS_TOUCH && (state === 'play' || state === 'paused')) drawTouchUI();
@@ -468,12 +503,12 @@ function drawPointer(wx, wy, label, color) {
 
 function drawQuests() {
   if (!quests.length) return;
-  const x = 10, y0 = 46, lh = 18, hQ = 10 + (quests.length + 1) * lh;
-  ctx.fillStyle = 'rgba(255,252,240,0.82)'; ctx.fillRect(x, y0, 258, hQ);
-  ctx.fillStyle = 'rgba(0,0,0,0.08)'; ctx.fillRect(x, y0 + hQ, 258, 2);
+  const x = 10, y0 = 46, lh = 18, W2 = 320, hQ = 10 + (quests.length + 1) * lh;
+  ctx.fillStyle = 'rgba(255,252,240,0.82)'; ctx.fillRect(x, y0, W2, hQ);
+  ctx.fillStyle = 'rgba(0,0,0,0.08)'; ctx.fillRect(x, y0 + hQ, W2, 2);
   ctx.textBaseline = 'middle'; ctx.textAlign = 'left';
   ctx.font = 'bold 13px Calibri,sans-serif'; ctx.fillStyle = '#7a5a2a'; ctx.fillText('ЗАВДАННЯ', x + 8, y0 + 13);
-  ctx.font = '13px Calibri,sans-serif';
+  ctx.font = '12px Calibri,sans-serif';
   quests.forEach((q, i) => { const yy = y0 + 13 + (i + 1) * lh; ctx.fillStyle = q.done ? '#4caf50' : '#4a4030'; ctx.fillText((q.done ? '✓ ' : '▢ ') + q.label + (q.prog && !q.done && q.prog !== '?' ? '  ' + q.prog : ''), x + 8, yy); });
 }
 
@@ -486,7 +521,7 @@ function drawMenu() {
   ctx.fillStyle = '#fff'; ctx.font = 'bold 66px Calibri,sans-serif'; ctx.fillText('☀ PUNK TOWN', VIEW_W / 2 + 2, VIEW_H / 2 - 58);
   ctx.fillStyle = '#3f8f3a'; ctx.fillText('☀ PUNK TOWN', VIEW_W / 2, VIEW_H / 2 - 60);
   ctx.fillStyle = '#4a5a38'; ctx.font = '20px Calibri,sans-serif';
-  ctx.fillText('Виконай 3 завдання · щоразу нова мапа · відстрілюй зомбі', VIEW_W / 2, VIEW_H / 2 - 14);
+  ctx.fillText('Знайди ключ, визволь жінку, приведи ДОДОМУ цілою та здолай боса', VIEW_W / 2, VIEW_H / 2 - 14);
   const blink = 0.5 + 0.5 * Math.sin(animClock * 4);
   ctx.globalAlpha = 0.5 + 0.5 * blink; ctx.fillStyle = '#e8932a'; ctx.font = 'bold 28px Calibri,sans-serif';
   ctx.fillText('Натисни ПРОБІЛ або клікни, щоб почати', VIEW_W / 2, VIEW_H / 2 + 36); ctx.globalAlpha = 1;
@@ -566,9 +601,10 @@ function drawHUD() {
 function drawOverlay() {
   ctx.fillStyle = state === 'win' ? 'rgba(40,80,40,0.55)' : 'rgba(60,30,30,0.6)'; ctx.fillRect(0, 0, VIEW_W, VIEW_H);
   ctx.textAlign = 'center'; ctx.fillStyle = state === 'win' ? '#aef5b0' : '#ff9a9a'; ctx.font = 'bold 60px Calibri,sans-serif';
-  ctx.fillText(state === 'win' ? 'ПЕРЕМОГА!' : 'ГРУ ЗАВЕРШЕНО', VIEW_W / 2, VIEW_H / 2 - 16);
+  ctx.fillText(state === 'win' ? 'ПЕРЕМОГА!' : (womanDead ? 'МІСІЮ ПРОВАЛЕНО' : 'ГРУ ЗАВЕРШЕНО'), VIEW_W / 2, VIEW_H / 2 - 16);
   ctx.fillStyle = '#fff'; ctx.font = '22px Calibri,sans-serif';
-  ctx.fillText((state === 'win' ? 'Усі завдання виконано! Вбито: ' + kills : 'Спробуй ще — нова мапа чекає') + '   —   R: нова гра', VIEW_W / 2, VIEW_H / 2 + 34);
+  const sub = state === 'win' ? 'Усі завдання виконано! Вбито: ' + kills : (failReason || 'Спробуй ще — нова мапа чекає');
+  ctx.fillText(sub + '   —   R: нова гра', VIEW_W / 2, VIEW_H / 2 + 34);
   ctx.textAlign = 'left';
 }
 
