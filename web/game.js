@@ -108,6 +108,7 @@ let combo = 0, comboT = 0, score = 0, coinsTotal = 0; let best = 0; try { best =
 let dmgMul = 1, spdMul = 1, maxHealth = 100, dmgLvl = 0, spdLvl = 0, hpLvl = 0, nearHome = false;
 const DAYCYCLE = 140; let nightF = 0;   // 0 = day, 1 = deep night
 let eventT = 35 + Math.random() * 30, eventMsg = '', eventMsgT = 0, supplyMarker = null;
+let minimapOn = true;
 function announce(t) { eventMsg = t; eventMsgT = 3.5; shakeT = Math.max(shakeT, 0.15); AUDIO.sfx.hurt(); }
 function triggerEvent() {
   const px = player.x, py = player.y;
@@ -219,7 +220,8 @@ let seed = 555; const sr = () => (seed = (seed * 1103515245 + 12345) & 0x7ffffff
 const keys = {};
 addEventListener('keydown', e => {
   keys[e.code] = true;
-  if (['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight', 'Space'].includes(e.code)) e.preventDefault();
+  if (['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight', 'Space', 'Tab'].includes(e.code)) e.preventDefault();
+  if (e.code === 'Tab') minimapOn = !minimapOn;
   if (state === 'title' && (e.code === 'Space' || e.code === 'Enter')) startGame();
   else if ((state === 'win' || state === 'gameover') && e.code === 'KeyR') location.reload();
   else if (e.code === 'KeyE' && state === 'play') { if (driving) exitCar(); else if (nearVehicle) enterCar(nearVehicle); }
@@ -824,7 +826,7 @@ function draw() {
   else if (womanFreed && !womanRescued) drawPointer(homes[0].x + 48, homes[0].y, 'ДОДОМУ', '#3fbf60');
   if (boss && !bossDead) drawPointer(boss.x + 15, boss.y, 'БОС', '#ff5a4a');
   if (supplyMarker) drawPointer(supplyMarker.x, supplyMarker.y, '📦', '#ffe08a');
-  drawHUD(); drawQuests(); drawWeaponBar(); drawSpeech();
+  drawHUD(); drawQuests(); drawWeaponBar(); drawSpeech(); drawMinimap();
   if (state === 'play' && nearHome) drawShopPrompt();
   if (state === 'play' && (nearVehicle || driving)) drawCarPrompt();
   if (state === 'shop') drawShop();
@@ -985,6 +987,21 @@ function drawHomeIndicator() {
   ctx.restore();
 }
 
+function drawMinimap() {
+  if (!minimapOn) return;
+  const mw = 150, mh = Math.round(mw * LH / LW), mx = VIEW_W - 10 - mw, my = 86;
+  ctx.fillStyle = 'rgba(12,18,12,0.7)'; rr(mx - 3, my - 3, mw + 6, mh + 6, 8); ctx.fill();
+  ctx.strokeStyle = 'rgba(0,0,0,.4)'; ctx.lineWidth = 1.5; rr(mx - 3, my - 3, mw + 6, mh + 6, 8); ctx.stroke();
+  const sx = mw / LW, sy = mh / LH;
+  const dot = (wx, wy, col, r) => { ctx.fillStyle = col; ctx.beginPath(); ctx.arc(mx + wx * sx, my + wy * sy, r || 2, 0, 7); ctx.fill(); };
+  dot(homes[0].x + 48, homes[0].y, '#3fbf60', 3);
+  if (boss && !bossDead) dot(boss.x, boss.y, '#ff5a4a', 3);
+  if (keyItem && !keyItem.got) dot(keyItem.x, keyItem.y, '#ffd23f', 2.5);
+  if (lockedHouse && !womanFreed) dot(lockedHouse.x + 48, lockedHouse.y + 48, '#9fd0e8', 3);
+  if (woman && woman.active && !womanRescued) dot(woman.x, woman.y, '#ff9aa2', 2.5);
+  if (supplyMarker) dot(supplyMarker.x, supplyMarker.y, '#ffe08a', 2.5);
+  ctx.fillStyle = '#fff'; ctx.beginPath(); ctx.arc(mx + (player.x + 9) * sx, my + (player.y + 11) * sy, 3, 0, 7); ctx.fill();
+}
 function drawSpeech() {
   if (speechT <= 0 || !speech) return;
   const w = Math.min(560, VIEW_W - 40), h = 70, x = VIEW_W / 2 - w / 2, y = VIEW_H - h - (IS_TOUCH ? 96 : 16);
