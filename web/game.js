@@ -107,7 +107,7 @@ function questSpot(minFromPlayer) {
   const ks = questSpot(640); keyItem = { x: ks[0] + 6, y: ks[1] + 6, got: false };
   quests.push({ type: 'key', label: 'Знайти ключ' });
   const hsp = questSpot(900); lockedHouse = { x: hsp[0], y: hsp[1] };
-  woman = { x: hsp[0] + 38, y: hsp[1] + 60, w: 18, h: 22, hp: 40, maxhp: 40, flash: 0, invuln: 0, frame: 0, walkT: 0, active: false };
+  woman = { x: hsp[0] + 38, y: hsp[1] + 60, w: 18, h: 22, hp: 40, maxhp: 40, flash: 0, invuln: 0, frame: 0, walkT: 0, active: false, weapon: null, fireCD: 0, aimx: 1, aimy: 0 };
   quests.push({ type: 'rescue', label: 'Врятувати жінку' });
   const bs = questSpot(700); boss = mkZombie(bs[0], bs[1]); boss.isBoss = true; boss.hp = 24; boss.maxhp = 24; boss.w = 30; boss.h = 34; boss.name = BOSS_NAMES[ri(BOSS_NAMES.length)]; boss.armed = true; boss.zw = 1; zombies.push(boss);
   quests.push({ type: 'boss', label: 'Здолати боса' });
@@ -278,6 +278,16 @@ function fire(dx, dy) {
   spawnBurst(mx, my, '#fff2a8', 3, 50, 2); shakeT = Math.max(shakeT, w.pellets > 1 ? 0.1 : 0.04);
   AUDIO.sfx.shoot(curW);
 }
+function womanFire(wx, wy, dx, dy) {
+  const w = WEAPONS[woman.weapon];
+  if (w.type === 'flame') {
+    for (let i = 0; i < 3; i++) { const a = Math.atan2(dy, dx) + (Math.random() - 0.5) * w.spread, s = 150 + Math.random() * 120; particles.push({ x: wx + dx * 8, y: wy + dy * 8, vx: Math.cos(a) * s, vy: Math.sin(a) * s, life: 0.3 + Math.random() * 0.2, max: 0.5, color: ['#ff7a1a', '#ffd23f', '#ff4a1a'][i % 3], size: 4, grav: 0 }); }
+    for (const z of zombies) { if (z.dead) continue; const zx = z.x + z.w / 2 - wx, zy = z.y + z.h / 2 - wy, d = Math.hypot(zx, zy); if (d <= w.range && (zx * dx + zy * dy) / (d || 1) > 0.5) damageZombie(z, w.dmg, dx * 0.3, dy * 0.3); }
+    return;
+  }
+  const base = Math.atan2(dy, dx);
+  for (let p = 0; p < w.pellets; p++) { const a = base + (w.pellets > 1 ? (Math.random() - 0.5) * w.spread * 2 : (Math.random() - 0.5) * w.spread); bullets.push({ x: wx, y: wy, vx: Math.cos(a) * w.speed, vy: Math.sin(a) * w.speed, life: 1.0, dmg: w.dmg, color: w.color }); }
+}
 function dropLoot(z) { if (sr() > LOOT_CHANCE) return; loot.push({ x: z.x, y: z.y, w: 22, h: 18, weapon: LOOT_WEAPONS[Math.floor(sr() * LOOT_WEAPONS.length)] }); }
 function pickDir(z) { const a = Math.random() * 6.283; z.vx = Math.cos(a) * ZSPEED; z.vy = Math.sin(a) * ZSPEED; z.t = 0.6 + Math.random() * 1.2; }
 function respawnZombie() {
@@ -405,6 +415,13 @@ function update(dt) {
     const wcx = woman.x + woman.w / 2, wcy = woman.y + woman.h / 2, pcx2 = player.x + player.w / 2, pcy2 = player.y + player.h / 2;
     const dd = Math.hypot(pcx2 - wcx, pcy2 - wcy);
     if (dd > 42) { const sp = 125 * dt; tryMove(woman, (pcx2 - wcx) / dd * sp, (pcy2 - wcy) / dd * sp); woman.walkT += dt; woman.frame = 1 + (Math.floor(woman.walkT * 8) % 2); } else woman.frame = 0;
+    // she shoots back if she has picked up a weapon
+    if (woman.weapon != null) {
+      woman.fireCD -= dt;
+      let best = null, bd = 320 * 320;
+      for (const z of zombies) { if (z.dead) continue; const dx = z.x + z.w / 2 - wcx, dy = z.y + z.h / 2 - wcy, q = dx * dx + dy * dy; if (q < bd) { bd = q; best = [dx, dy]; } }
+      if (best) { const m = Math.hypot(best[0], best[1]) || 1; woman.aimx = best[0] / m; woman.aimy = best[1] / m; if (woman.fireCD <= 0) { womanFire(wcx, wcy, woman.aimx, woman.aimy); woman.fireCD = WEAPONS[woman.weapon].rate; } }
+    }
     for (const z of zombies) if (woman.invuln <= 0 && aabb(woman.x, woman.y, woman.w, woman.h, z.x, z.y, z.w, z.h)) { woman.hp -= 14; woman.invuln = 0.6; woman.flash = 0.14; spawnBurst(wcx, wcy, '#e0518f', 6, 90, 2); break; }
     if (woman.hp <= 0) { womanDead = true; state = 'gameover'; failReason = 'Жінку вбили — місію провалено'; AUDIO.stopMusic(); AUDIO.sfx.lose(); }
     for (const hm of homes) if (aabb(woman.x, woman.y, woman.w, woman.h, hm.x - 16, hm.y - 40, 128, 112)) { womanRescued = true; woman.active = false; spawnBurst(woman.x + 9, woman.y + 11, '#7dff9a', 16, 130, 3); showToast('Жінка вдома! Врятовано ✓'); AUDIO.sfx.win(); }
@@ -416,7 +433,12 @@ function update(dt) {
     if (justStarters) curW = a.weapon;                                     // auto-equip the first looted gun
     spawnBurst(a.x + 11, a.y + 9, WEAPONS[a.weapon].color, 14, 130, 3); AUDIO.sfx.pickup();
     showToast('Нова зброя: ' + WEAPONS[a.weapon].name + (justStarters ? '!' : ' (натисни ' + (a.weapon + 1) + ')'));
-    loot.splice(i, 1);
+    loot.splice(i, 1); continue;
+  }
+  // the escorted woman can grab a weapon too and fight with it
+  if (woman && woman.active && !womanRescued && aabb(woman.x, woman.y, woman.w, woman.h, a.x, a.y, a.w, a.h)) {
+    woman.weapon = a.weapon; woman.fireCD = 0.3; spawnBurst(a.x + 11, a.y + 9, WEAPONS[a.weapon].color, 12, 120, 3); AUDIO.sfx.pickup();
+    showToast('Жінка озброїлась: ' + WEAPONS[a.weapon].name + '!'); loot.splice(i, 1);
   } }
 
   // timers + particles
@@ -468,6 +490,7 @@ function draw() {
   // the woman
   if (woman && woman.active && !womanRescued) {
     spr(IMG.woman[woman.frame], woman.x - 3, woman.y - 8);
+    if (woman.weapon != null) { const wcx = woman.x + woman.w / 2 - cam.x, wcy = woman.y + woman.h / 2 - cam.y; ctx.save(); ctx.translate(Math.round(wcx), Math.round(wcy)); ctx.rotate(Math.atan2(woman.aimy, woman.aimx)); ctx.fillStyle = '#333'; ctx.fillRect(3, -1.5, 11, 3); ctx.fillStyle = WEAPONS[woman.weapon].color; ctx.fillRect(12, -1, 3, 2); ctx.restore(); }
     if (woman.flash > 0) { ctx.globalAlpha = woman.flash / 0.14 * 0.7; ctx.fillStyle = '#fff'; ctx.fillRect(Math.round(woman.x - 3 - cam.x), Math.round(woman.y - 8 - cam.y), 24, 32); ctx.globalAlpha = 1; }
     const hx = Math.round(woman.x - cam.x), hy = Math.round(woman.y - 12 - cam.y);
     ctx.fillStyle = 'rgba(0,0,0,.55)'; ctx.fillRect(hx - 1, hy, woman.w + 2, 4); ctx.fillStyle = '#e0518f'; ctx.fillRect(hx, hy + 1, woman.w * Math.max(0, woman.hp) / woman.maxhp, 2);
