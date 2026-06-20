@@ -322,7 +322,20 @@ const ZTYPES = ['normal', 'runner', 'tank', 'exploder'];
 const ZTI = { normal: 0, runner: 1, tank: 2, exploder: 3 };
 function spawnPlayer2() { const h = homes[0]; player2 = { x: h.x + 44, y: h.y + 40, w: 18, h: 22, face: { x: 1, y: 0 }, frame: 0, health: 100, invuln: 0, flash: 0, fireCD: 0, dead: false, respawnT: 0, active: true }; }
 if (coop) {
-  NET.on('err', t => setMP('⚠ Помилка зв’язку: ' + t + ' — спробуй ще раз'));
+  NET.on('err', t => {
+    const m = {
+      'network': '⚠ Немає зв’язку із сервером. Перевір інтернет і спробуй ще раз.',
+      'server-error': '⚠ Сервер кімнат недоступний. Спробуй за хвилину.',
+      'socket-error': '⚠ Обірвався зв’язок із сервером. Спробуй ще раз.',
+      'socket-closed': '⚠ Зв’язок із сервером закрито. Онови сторінку.',
+      'peer-unavailable': '⚠ Кімнату не знайдено. Перевір код (великими літерами) або зачекай, поки хост її створить.',
+      'unavailable-id': '⚠ Код зайнятий. Натисни «Створити кооп» ще раз для нового коду.',
+      'conn': '⚠ Не вдалося з’єднатися напряму (мобільний NAT). Спробуйте обидва на Wi-Fi.',
+      'webrtc': '⚠ Збій WebRTC-з’єднання. Спробуй ще раз або через Wi-Fi.',
+      'browser-incompatible': '⚠ Браузер не підтримує WebRTC. Спробуй Chrome/Safari новішої версії.',
+    };
+    setMP(m[t] || ('⚠ Помилка зв’язку: ' + t + ' — спробуй ще раз'));
+  });
   NET.on('open', () => { setMP('✅ Напарник у грі!'); if (NET.role() === 'host') spawnPlayer2(); if (state === 'title') startGame(); });
   NET.on('close', () => { setMP('⚠ Напарник відключився'); remotePlayer = null; if (NET.role() === 'host') { player2 = null; remoteInput = null; } });
   NET.on('data', d => { if (!d) return; if (d.t === 'in') remoteInput = d; else if (d.t === 'snap') netSnap = d; });
