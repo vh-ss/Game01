@@ -317,13 +317,108 @@ const setMP = t => { const s = document.getElementById('mpStatus'); if (s) s.tex
 { const hb = document.getElementById('hostBtn'), jb = document.getElementById('joinBtn'), jc = document.getElementById('joinCode');
   if (hb) hb.addEventListener('click', () => { const code = roomCode(); sessionStorage.setItem('coop', JSON.stringify({ role: 'host', code })); location.reload(); });
   if (jb) jb.addEventListener('click', () => { if (jc.style.display === 'none' || !jc.style.display) { jc.style.display = 'inline-block'; jc.focus(); return; } const code = (jc.value || '').trim().toUpperCase(); if (code.length < 4) { jc.focus(); return; } sessionStorage.setItem('coop', JSON.stringify({ role: 'client', code })); location.reload(); }); }
-let remotePlayer = null, netSendT = 0;
+let remotePlayer = null, player2 = null, remoteInput = null, netSnap = null, netSendT = 0;
+const ZTYPES = ['normal', 'runner', 'tank', 'exploder'];
+const ZTI = { normal: 0, runner: 1, tank: 2, exploder: 3 };
+function spawnPlayer2() { const h = homes[0]; player2 = { x: h.x + 44, y: h.y + 40, w: 18, h: 22, face: { x: 1, y: 0 }, frame: 0, health: 100, invuln: 0, flash: 0, fireCD: 0, dead: false, respawnT: 0, active: true }; }
 if (coop) {
   NET.on('err', t => setMP('⚠ Помилка зв’язку: ' + t + ' — спробуй ще раз'));
-  NET.on('data', d => { if (d && d.t === 'pos') remotePlayer = d; });
-  NET.on('open', () => { setMP('✅ Напарник у грі!'); if (state === 'title') startGame(); });
+  NET.on('open', () => { setMP('✅ Напарник у грі!'); if (NET.role() === 'host') spawnPlayer2(); if (state === 'title') startGame(); });
+  NET.on('close', () => { setMP('⚠ Напарник відключився'); remotePlayer = null; if (NET.role() === 'host') { player2 = null; remoteInput = null; } });
+  NET.on('data', d => { if (!d) return; if (d.t === 'in') remoteInput = d; else if (d.t === 'snap') netSnap = d; });
   if (coop.role === 'host') { NET.on('ready', () => setMP('Кімната: ' + coop.code + '  — дай цей код напарнику, тоді тисни «Грати»')); NET.host(coop.code); setMP('Створення кімнати…'); }
   else { NET.join(coop.code); setMP('Приєднання до кімнати ' + coop.code + '…'); }
+}
+// ---- host: build a world snapshot for the client (host is authoritative) ----
+function buildSnapshot() {
+  const z = [];
+  for (const e of zombies) {
+    if (e.hidden || e.dead) continue;
+    let fl = 0; if (e.crim) fl |= 1; if (e.armed) fl |= 2; if (e.isBoss) fl |= 4;
+    z.push([Math.round(e.x), Math.round(e.y), e.frame | 0, ZTI[e.ztype] || 0, fl, e.w, e.h, Math.round(e.hp), Math.round(e.maxhp || e.hp), Math.round((e.aimx || 0) * 100), Math.round((e.aimy || 0) * 100), e.zw | 0]);
+  }
+  return {
+    t: 'snap', nf: +nightF.toFixed(3),
+    p1: { x: Math.round(player.x), y: Math.round(player.y), fx: +face.x.toFixed(2), fy: +face.y.toFixed(2), fr: player.frame, h: Math.round(health) },
+    mh: player2 ? Math.round(player2.health) : 100,
+    cn: totalCoins, kl: kills, sc: score, di: district,
+    fl: [hasKey ? 1 : 0, womanFreed ? 1 : 0, womanRescued ? 1 : 0, bossDead ? 1 : 0],
+    bn: boss && !bossDead ? boss.name : '',
+    z, bu: bullets.map(b => [Math.round(b.x), Math.round(b.y), b.color]),
+    eb: eBullets.map(b => [Math.round(b.x), Math.round(b.y), b.big ? 1 : 0]),
+    co: coins.map(c => [Math.round(c.x), Math.round(c.y), c.v || 1]),
+    wm: woman && woman.active ? [Math.round(woman.x), Math.round(woman.y), woman.frame | 0, womanRescued ? 1 : 0, womanDead ? 1 : 0] : null,
+    st: state,
+  };
+}
+// ---- client: apply the host's snapshot into local state for rendering ----
+function applySnapshot(s) {
+  nightF = s.nf;
+  remotePlayer = s.p1;
+  health = s.mh; totalCoins = s.cn; kills = s.kl; score = s.sc; district = s.di;
+  hasKey = !!s.fl[0]; womanFreed = !!s.fl[1]; womanRescued = !!s.fl[2]; bossDead = !!s.fl[3];
+  zombies.length = 0;
+  for (const a of s.z) zombies.push({
+    x: a[0], y: a[1], frame: a[2], ztype: ZTYPES[a[3]], crim: !!(a[4] & 1), armed: !!(a[4] & 2), isBoss: !!(a[4] & 4),
+    w: a[5], h: a[6], hp: a[7], maxhp: a[8], aimx: a[9] / 100, aimy: a[10] / 100, zw: a[11], name: s.bn, hidden: false, flash: 0, sm: 1, dead: false,
+  });
+  const bz = zombies.find(z => z.isBoss); if (bz) boss = bz;   // keep boss pointer correct for the objective arrow
+  bullets.length = 0; for (const a of s.bu) bullets.push({ x: a[0], y: a[1], color: a[2], vx: 0, vy: 0, life: 1, dmg: 0 });
+  eBullets.length = 0; for (const a of s.eb) eBullets.push({ x: a[0], y: a[1], big: !!a[2], color: a[2] ? '#c46bff' : '#ff5a4a', vx: 0, vy: 0, life: 1, dmg: 0 });
+  coins.length = 0; for (const a of s.co) coins.push({ x: a[0], y: a[1], v: a[2] });
+  if (s.wm) { woman.active = true; woman.x = s.wm[0]; woman.y = s.wm[1]; woman.frame = s.wm[2]; womanRescued = !!s.wm[3]; womanDead = !!s.wm[4]; }
+  else if (woman) woman.active = false;
+  if (s.st && s.st !== 'play' && state === 'play') state = s.st;
+}
+// ---- host: drive player2 (the client's character) from received input ----
+function updateP2(dt) {
+  const ri = remoteInput;
+  player2.invuln = Math.max(0, player2.invuln - dt);
+  player2.flash = Math.max(0, player2.flash - dt);
+  if (player2.dead) { player2.respawnT -= dt; if (player2.respawnT <= 0) { player2.dead = false; player2.health = 100; const h = homes[0]; player2.x = h.x + 44; player2.y = h.y + 40; } return; }
+  player2.x = ri.x; player2.y = ri.y; player2.face.x = ri.fx; player2.face.y = ri.fy; player2.frame = ri.fr;
+  player2.fireCD = Math.max(0, player2.fireCD - dt);
+  if (ri.fire && player2.fireCD <= 0) {
+    const mx = player2.x + 9, my = player2.y + 11, ax = ri.ax || 1, ay = ri.ay || 0, base = Math.atan2(ay, ax);
+    if (ri.melee) {
+      for (const z of zombies) { if (z.dead || z.hidden) continue; const zx = z.x + z.w / 2 - mx, zy = z.y + z.h / 2 - my, dd = Math.hypot(zx, zy); if (dd <= 44 && (zx * ax + zy * ay) / (dd || 1) > 0.1) damageZombie(z, ri.dmg || 4, ax, ay); }
+      AUDIO.sfx.melee();
+    } else {
+      const pel = ri.pel || 1, spr = ri.spr || 0;
+      for (let p = 0; p < pel; p++) { const a = base + (Math.random() - 0.5) * spr * (pel > 1 ? 2 : 1); bullets.push({ x: mx, y: my, vx: Math.cos(a) * (ri.spd || 620), vy: Math.sin(a) * (ri.spd || 620), life: 1.0, dmg: ri.dmg || 1, color: ri.col || '#9fd0ff' }); }
+    }
+    player2.fireCD = Math.max(0.08, ri.rate || 0.18);
+  }
+}
+// ---- client: local movement + send input; world comes from snapshots ----
+function updateClient(dt) {
+  if (netSnap) applySnapshot(netSnap);
+  if (state !== 'play') return;
+  let ix = (keys.ArrowRight || keys.KeyD ? 1 : 0) - (keys.ArrowLeft || keys.KeyA ? 1 : 0);
+  let iy = (keys.ArrowDown || keys.KeyS ? 1 : 0) - (keys.ArrowUp || keys.KeyW ? 1 : 0);
+  if (tMove.active) { ix = tMove.mx; iy = tMove.my; }
+  const mag = Math.hypot(ix, iy), moving = mag > 0.06;
+  if (moving) { face.x = ix / mag; face.y = iy / mag; }
+  const running = (keys.ShiftLeft || keys.ShiftRight || (tMove.active && mag > 0.92)) && stamina > 0 && moving;
+  const onSand = tileAt(player.x + player.w / 2, player.y + player.h / 2) === 3;
+  const sp = SPEED * spdMul * (running ? RUN_MULT : 1) * (onSand ? 0.5 : 1) * dt;
+  let mvx = ix, mvy = iy; if (mag > 1) { mvx = ix / mag; mvy = iy / mag; }
+  tryMove(player, mvx * sp, mvy * sp);
+  if (moving) { player.walkT += dt * (running ? 1.5 : 1); player.frame = 1 + (Math.floor(player.walkT * 9) % 2); } else player.frame = 0;
+  stamina = clamp(stamina + (running ? -STAM_DRAIN : STAM_REGEN) * dt, 0, STAM_MAX);
+  for (let i = 0; i < WEAPONS.length; i++) if (keys['Digit' + (i + 1)]) curW = i;   // client may use any weapon (infinite ammo)
+  let aim = null;
+  if (tFire.active) { aim = autoAim(); face.x = aim.x; face.y = aim.y; }
+  let firing = false, ax = face.x, ay = face.y;
+  if (mouse.down) { firing = true; ax = mouse.x + cam.x - (player.x + player.w / 2); ay = mouse.y + cam.y - (player.y + player.h / 2); const m = Math.hypot(ax, ay) || 1; ax /= m; ay /= m; }
+  else if (tFire.active) { firing = true; ax = aim.x; ay = aim.y; }
+  else if (keys.KeyF) { firing = true; }
+  fireCD -= dt; let doFire = false;
+  if (firing && fireCD <= 0) { doFire = true; fireCD = WEAPONS[curW].rate; const w = WEAPONS[curW]; (w.type === 'melee' ? AUDIO.sfx.melee : w.type === 'flame' ? AUDIO.sfx.flame : AUDIO.sfx.shoot)(); }
+  const w = WEAPONS[curW];
+  NET.send({ t: 'in', x: Math.round(player.x), y: Math.round(player.y), fx: +face.x.toFixed(2), fy: +face.y.toFixed(2), fr: player.frame,
+    fire: doFire, ax: +ax.toFixed(2), ay: +ay.toFixed(2),
+    dmg: Math.round(w.dmg * dmgMul), rate: w.rate, spd: w.speed || 620, col: w.color, pel: w.pellets || 1, spr: w.spread || 0, melee: w.type === 'melee' });
 }
 const isMobile = () => matchMedia('(pointer:coarse)').matches || innerWidth < 820;
 function tryFullscreen() {
@@ -490,6 +585,7 @@ function update(dt) {
   nightF = (1 - Math.cos((animClock % DAYCYCLE) / DAYCYCLE * Math.PI * 2)) / 2;   // smooth day↔night
   if (state !== 'play') return;
   dt = Math.min(dt, 0.033);
+  if (coop && NET.role() === 'client') { updateClient(dt); return; }   // client only moves itself + sends input
 
   // movement (keyboard or touch joystick — analog-friendly)
   let ix = (keys.ArrowRight || keys.KeyD ? 1 : 0) - (keys.ArrowLeft || keys.KeyA ? 1 : 0);
@@ -506,6 +602,7 @@ function update(dt) {
   if (moving) { player.walkT += dt * (running ? 1.5 : 1); player.frame = 1 + (Math.floor(player.walkT * 9) % 2); } else { player.frame = 0; }
   // nearest mountable vehicle
   nearVehicle = null; if (!driving) { let bd = 46 * 46; for (const v of vehicles) { const d = (v.x - player.x - 9) ** 2 + (v.y - player.y - 11) ** 2; if (d < bd) { bd = d; nearVehicle = v; } } }
+  if (coop && NET.role() === 'host' && player2 && remoteInput) updateP2(dt);   // drive the client's character
 
   // dust on sand
   dustT -= dt;
@@ -558,7 +655,9 @@ function update(dt) {
     z.flash = Math.max(0, z.flash - dt);
     if (z.crim) { z.stealCD = Math.max(0, z.stealCD - dt); z.fleeT = Math.max(0, z.fleeT - dt); }
     z.frame = 1 + (Math.floor(animClock * 8 + z.x * 0.05) % 2);
-    const zx = z.x + z.w / 2, zy = z.y + z.h / 2, px = player.x + player.w / 2, py = player.y + player.h / 2;
+    const zx = z.x + z.w / 2, zy = z.y + z.h / 2;
+    let px = player.x + player.w / 2, py = player.y + player.h / 2;
+    if (player2 && player2.active && !player2.dead) { const p2x = player2.x + 9, p2y = player2.y + 11; if ((p2x - zx) ** 2 + (p2y - zy) ** 2 < (px - zx) ** 2 + (py - zy) ** 2) { px = p2x; py = p2y; } }
     const d = Math.hypot(px - zx, py - zy);
     const chaseR = z.crim ? 300 : 220, spd = (z.crim ? ZCHASE * 1.15 : ZCHASE) * (z.sm || 1);   // type speed
     if (z.crim && z.fleeT > 0) { const m = d || 1; z.vx = (zx - px) / m * spd * 1.3; z.vy = (zy - py) / m * spd * 1.3; }  // run away after a theft
@@ -597,6 +696,10 @@ function update(dt) {
         }
       } else hurt(z.ztype === 'tank' ? 26 : 16);
     }
+    if (player2 && player2.active && !player2.dead && player2.invuln <= 0 && !z.dead && aabb(player2.x, player2.y, player2.w, player2.h, z.x, z.y, z.w, z.h)) {
+      player2.health -= z.ztype === 'tank' ? 22 : 14; player2.invuln = 0.5; player2.flash = 0.14; spawnBurst(player2.x + 9, player2.y + 11, '#9fd0ff', 5, 80, 2);
+      if (player2.health <= 0) { player2.dead = true; player2.respawnT = 2.5; spawnBurst(player2.x + 9, player2.y + 11, '#ff5a4a', 14, 130, 3); }
+    }
   }
 
   // enemy bullets
@@ -604,6 +707,7 @@ function update(dt) {
     const b = eBullets[i]; b.x += b.vx * dt; b.y += b.vy * dt; b.life -= dt;
     let dead = b.life <= 0 || boxSolid(b.x - 1, b.y - 1, 2, 2) || b.x < 0 || b.x > LW || b.y < 0 || b.y > LH;
     if (!dead && aabb(player.x, player.y, player.w, player.h, b.x - 2, b.y - 2, 4, 4)) { if (driving) { carHp -= b.dmg; if (carHp <= 0) { exitCar(); announce('🚗 Машина розбита!'); } } else if (invuln <= 0) hurt(b.dmg); dead = true; }
+    if (!dead && player2 && player2.active && !player2.dead && player2.invuln <= 0 && aabb(player2.x, player2.y, player2.w, player2.h, b.x - 2, b.y - 2, 4, 4)) { player2.health -= b.dmg; player2.invuln = 0.4; player2.flash = 0.14; if (player2.health <= 0) { player2.dead = true; player2.respawnT = 2.5; } dead = true; }
     if (dead) { if (b.owner) b.owner.hasBullet = false; eBullets.splice(i, 1); }
   }
 
@@ -616,7 +720,11 @@ function update(dt) {
   stamina = clamp(stamina + (running ? -STAM_DRAIN : (onHome ? STAM_REGEN_HOME : STAM_REGEN)) * dt, 0, STAM_MAX);
 
   // pickups
-  coins = coins.filter(co => { if (aabb(player.x, player.y, player.w, player.h, co.x - 10, co.y - 10, 28, 28)) { const v = co.v || 1; totalCoins += v; coinsTotal += v; score += v * 5; spawnBurst(co.x, co.y, '#ffd23f', 6 + v * 2, 80, 2); AUDIO.sfx.coin(); return false; } return true; });
+  coins = coins.filter(co => {
+    if (aabb(player.x, player.y, player.w, player.h, co.x - 10, co.y - 10, 28, 28)) { const v = co.v || 1; totalCoins += v; coinsTotal += v; score += v * 5; spawnBurst(co.x, co.y, '#ffd23f', 6 + v * 2, 80, 2); AUDIO.sfx.coin(); return false; }
+    if (player2 && player2.active && !player2.dead && aabb(player2.x, player2.y, player2.w, player2.h, co.x - 10, co.y - 10, 28, 28)) { const v = co.v || 1; totalCoins += v; coinsTotal += v; score += v * 5; spawnBurst(co.x, co.y, '#ffd23f', 6 + v * 2, 80, 2); AUDIO.sfx.coin(); return false; }
+    return true;
+  });
   // key pickup
   if (keyItem && !keyItem.got && aabb(player.x, player.y, player.w, player.h, keyItem.x - 6, keyItem.y - 6, 28, 28)) { keyItem.got = true; hasKey = true; AUDIO.sfx.pickup(); spawnBurst(keyItem.x + 6, keyItem.y + 6, '#ffd23f', 16, 140, 3); showToast('Знайдено ключ! Іди до будинку 🏚'); }
   // unlock the house with the key
@@ -910,11 +1018,14 @@ function draw() {
   }
 
   // co-op partner (other player on the same map)
-  if (remotePlayer) {
-    spr(IMG.player[remotePlayer.fr || 0], remotePlayer.x - 3, remotePlayer.y - 8);
-    const tx = Math.round(remotePlayer.x + 9 - cam.x), ty = Math.round(remotePlayer.y - 16 - cam.y);
+  const partner = coop ? (NET.role() === 'host' ? (player2 && player2.active ? player2 : null) : remotePlayer) : null;
+  if (partner) {
+    const pf = (partner.fr != null ? partner.fr : partner.frame) | 0;
+    const ph = partner.h != null ? partner.h : partner.health;
+    spr(IMG.player[pf || 0], partner.x - 3, partner.y - 8);
+    const tx = Math.round(partner.x + 9 - cam.x), ty = Math.round(partner.y - 16 - cam.y);
     ctx.fillStyle = '#9fd0ff'; ctx.font = 'bold 11px "Trebuchet MS",sans-serif'; ctx.textAlign = 'center'; ctx.fillText('2P', tx, ty); ctx.textAlign = 'left';
-    if (typeof remotePlayer.h === 'number') { ctx.fillStyle = 'rgba(0,0,0,.5)'; ctx.fillRect(tx - 14, ty + 4, 28, 3); ctx.fillStyle = '#7fe07f'; ctx.fillRect(tx - 14, ty + 4, 28 * Math.max(0, remotePlayer.h) / 100, 3); }
+    if (typeof ph === 'number') { ctx.fillStyle = 'rgba(0,0,0,.5)'; ctx.fillRect(tx - 14, ty + 4, 28, 3); ctx.fillStyle = '#7fe07f'; ctx.fillRect(tx - 14, ty + 4, 28 * Math.max(0, ph) / 100, 3); }
   }
 
   for (const p of particles) { ctx.globalAlpha = Math.max(0, p.life / p.max); ctx.fillStyle = p.color; ctx.fillRect(Math.round(p.x - cam.x - p.size / 2), Math.round(p.y - cam.y - p.size / 2), p.size, p.size); }
@@ -1203,9 +1314,9 @@ let last = 0;
 function frame(t) {
   const dt = Math.min((t - last) / 1000, 0.05); last = t;
   update(dt); draw();
-  if (coop && NET.connected()) {
+  if (coop && NET.connected() && NET.role() === 'host') {
     netSendT -= dt;
-    if (netSendT <= 0) { NET.send({ t: 'pos', x: Math.round(player.x), y: Math.round(player.y), fx: +face.x.toFixed(2), fy: +face.y.toFixed(2), fr: player.frame, h: Math.round(health) }); netSendT = 0.06; }
+    if (netSendT <= 0) { NET.send(buildSnapshot()); netSendT = 1 / 15; }   // host broadcasts the world ~15Hz
   }
   if ((state === 'win' || state === 'gameover') && !endShown) { endShown = true; showEndScreen(); }
   requestAnimationFrame(frame);
