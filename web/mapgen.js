@@ -1,8 +1,10 @@
 // Procedural town generator — runs in-browser, so every run is a NEW map.
 // ~10× bigger world with a road grid, several ponds, woods and yards.
-function genWorld() {
+function genWorld(seed) {
   const TS = 32, W = 140, H = 108;            // ~10x the old 44x34 area
-  const ri = n => Math.floor(Math.random() * n);
+  let _s = (seed >>> 0) || 123456789;
+  const rnd = () => { _s = (_s * 1103515245 + 12345) & 0x7fffffff; return _s / 0x7fffffff; };
+  const ri = n => Math.floor(rnd() * n);
   const g = Array.from({ length: H }, () => new Array(W).fill(0)); // 0 grass
 
   // border fence

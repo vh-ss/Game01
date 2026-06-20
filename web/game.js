@@ -1,7 +1,12 @@
 // PUNK TOWN — bright top-down shooter. Collect 15 coins, dodge/blast goofy
 // zombies, heal at home. Sunny, friendly atmosphere (no horror).
 
-const LEVEL = genWorld();   // fresh procedural town every run/restart
+// ---- co-op room + shared world seed (same room code → identical map) ----
+let coop = null; try { coop = JSON.parse(sessionStorage.getItem('coop') || 'null'); } catch (e) {}
+function codeSeed(s) { let h = 2166136261; for (let i = 0; i < s.length; i++) { h ^= s.charCodeAt(i); h = Math.imul(h, 16777619); } return h >>> 0; }
+let GENSEED = coop ? codeSeed(coop.code) : (Math.floor(Math.random() * 1e9) >>> 0);
+function R() { GENSEED = (GENSEED * 1103515245 + 12345) & 0x7fffffff; return GENSEED / 0x7fffffff; }
+const LEVEL = genWorld(GENSEED);   // procedural town (deterministic by seed)
 let district = 1; try { district = Math.max(1, +(sessionStorage.getItem('punktown_district') || 1)); } catch (e) {}
 const HPBONUS = district - 1;   // tougher zombies in later districts
 let VIEW_W = window.innerWidth, VIEW_H = window.innerHeight, DPR = Math.min(window.devicePixelRatio || 1, 2);
@@ -80,7 +85,7 @@ function mkCrim(x, y) {
   return { x, y, w: 18, h: 22, vx: 0, vy: 0, t: 0, hp: 5, flash: 0, frame: 0, crim: true, carrying: 0, stealCD: 0, fleeT: 0, stolenWeapon: null,
     armed, zw: armed ? Math.floor(Math.random() * ZWEAPONS.length) : 0, shootCD: 0.8 + Math.random() * 1.5, hasBullet: false, aimx: 1, aimy: 0 };
 }
-function coinVal() { const r = Math.random(); return r < 0.5 ? 1 : r < 0.8 ? 2 : r < 0.94 ? 3 : 5; }   // varying coin worth
+function coinVal() { const r = R(); return r < 0.5 ? 1 : r < 0.8 ? 2 : r < 0.94 ? 3 : 5; }   // varying coin worth (seeded)
 let coins = LEVEL.coins.map(([x, y]) => ({ x, y, v: coinVal() }));
 const homes = LEVEL.homes.map(([x, y]) => ({ x, y }));
 const houseImgs = [IMG.house1, IMG.house2, IMG.house3];
@@ -138,7 +143,7 @@ const reachCells = (LEVEL.reach || []).filter(([c, r]) => r >= 0 && r < ROWS && 
 
 // ---- campaign: find key → free woman from locked house → escort her home; always also kill the boss ----
 const BOSS_NAMES = ['Гнилий Король', 'Зомбі-Велетень', 'Лорд Гнилля', 'Старий Грець'];
-const ri = n => Math.floor(Math.random() * n);
+const ri = n => Math.floor(R() * n);
 let boss = null, bossDead = false;
 let keyItem = null, lockedHouse = null, woman = null;
 let hasKey = false, womanFreed = false, womanRescued = false, womanDead = false, failReason = '';
@@ -159,7 +164,7 @@ function questSpot(minFromPlayer) {
   const bs = questSpot(700); boss = mkZombie(bs[0], bs[1]); boss.isBoss = true; boss.hp = 24; boss.maxhp = 24; boss.w = 30; boss.h = 34; boss.name = BOSS_NAMES[ri(BOSS_NAMES.length)]; boss.armed = true; boss.zw = 1; zombies.push(boss);
   quests.push({ type: 'boss', label: 'Здолати боса' });
   // one random side objective for variety
-  if (Math.random() < 0.5) quests.push({ type: 'coins', target: 25 + ri(20), label: 'Монети' });
+  if (R() < 0.5) quests.push({ type: 'coins', target: 25 + ri(20), label: 'Монети' });
   else quests.push({ type: 'kills', target: 12 + ri(12), label: 'Зомбі' });
 })();
 // gangs of coin-stealing bandits, scattered across the town
@@ -170,7 +175,7 @@ for (let k = 0; k < (district - 1) * 8; k++) { const s = questSpot(300); zombies
 const bushes = [];
 {
   const cells = reachCells.slice();
-  for (let i = cells.length - 1; i > 0; i--) { const j = Math.floor(Math.random() * (i + 1)); [cells[i], cells[j]] = [cells[j], cells[i]]; }
+  for (let i = cells.length - 1; i > 0; i--) { const j = Math.floor(R() * (i + 1)); [cells[i], cells[j]] = [cells[j], cells[i]]; }
   let ambushes = 0;
   for (const [c, r] of cells) {
     if (tileIdx[r][c] !== 0) continue;                                   // bushes only on grass
@@ -179,7 +184,7 @@ const bushes = [];
     if (bushes.some(b => Math.abs(b.x - wx) < 64 && Math.abs(b.y - wy) < 64)) continue;
     const ambush = ambushes < 14;
     const bush = { x: wx, y: wy, ambush, triggered: false, members: [] };
-    if (ambush) { const n = 2 + Math.floor(Math.random() * 4); for (let k = 0; k < n; k++) { const z = mkCrim(wx + Math.random() * 26 - 13, wy + Math.random() * 26 - 13); z.hidden = true; zombies.push(z); bush.members.push(z); } ambushes++; }
+    if (ambush) { const n = 2 + Math.floor(R() * 4); for (let k = 0; k < n; k++) { const z = mkCrim(wx + R() * 26 - 13, wy + R() * 26 - 13); z.hidden = true; zombies.push(z); bush.members.push(z); } ambushes++; }
     bushes.push(bush);
     if (bushes.length >= 70) break;
   }
@@ -189,8 +194,8 @@ const bushes = [];
 const vehicles = [];
 {
   const road = reachCells.filter(([c, r]) => tileIdx[r][c] === 7);
-  for (let i = road.length - 1; i > 0; i--) { const j = Math.floor(Math.random() * (i + 1)); [road[i], road[j]] = [road[j], road[i]]; }
-  for (const [c, r] of road) { const wx = c * TS + 16, wy = r * TS + 16; if (Math.hypot(wx - player.x, wy - player.y) < 140) continue; if (vehicles.every(v => Math.hypot(v.x - wx, v.y - wy) > 220)) { vehicles.push({ x: wx, y: wy, col: ['#6a7e8a', '#8a6a5a', '#6a8a6a', '#8a8a5a'][Math.floor(Math.random() * 4)] }); if (vehicles.length >= 6) break; } }
+  for (let i = road.length - 1; i > 0; i--) { const j = Math.floor(R() * (i + 1)); [road[i], road[j]] = [road[j], road[i]]; }
+  for (const [c, r] of road) { const wx = c * TS + 16, wy = r * TS + 16; if (Math.hypot(wx - player.x, wy - player.y) < 140) continue; if (vehicles.every(v => Math.hypot(v.x - wx, v.y - wy) > 220)) { vehicles.push({ x: wx, y: wy, col: ['#6a7e8a', '#8a6a5a', '#6a8a6a', '#8a8a5a'][Math.floor(R() * 4)] }); if (vehicles.length >= 6) break; } }
 }
 let driving = false, carHp = 0, nearVehicle = null;
 function enterCar(v) { driving = true; carHp = 100; player.x = v.x; player.y = v.y; const i = vehicles.indexOf(v); if (i >= 0) vehicles.splice(i, 1); showToast('🚗 За кермом! Дави ворогів'); }
@@ -201,7 +206,7 @@ function mkAlly(x, y) { return { x, y, w: 18, h: 22, vx: 0, vy: 0, t: 0, hp: 30,
 const allies = [];
 {
   const cells = reachCells.slice();
-  for (let i = cells.length - 1; i > 0; i--) { const j = Math.floor(Math.random() * (i + 1)); [cells[i], cells[j]] = [cells[j], cells[i]]; }
+  for (let i = cells.length - 1; i > 0; i--) { const j = Math.floor(R() * (i + 1)); [cells[i], cells[j]] = [cells[j], cells[i]]; }
   let n = 0;
   for (const [c, r] of cells) { const wx = c * TS + 16, wy = r * TS + 16; if (Math.hypot(wx - player.x, wy - player.y) < 320) continue; if (allies.every(a => Math.hypot(a.x + 9 - wx, a.y + 11 - wy) > 320)) { allies.push(mkAlly(wx - 9, wy - 11)); if (++n >= 3) break; } }
 }
@@ -305,6 +310,21 @@ function showEndScreen() {
 }
 document.getElementById('startBtn').addEventListener('click', startGame);
 // (againBtn handler is set per-result in showEndScreen)
+
+// ---- co-op lobby (reload into a room so seed = code → identical map) ----
+function roomCode() { const a = 'ABCDEFGHJKMNPQRSTUVWXYZ23456789'; let s = ''; for (let i = 0; i < 5; i++) s += a[Math.floor(Math.random() * a.length)]; return s; }
+const setMP = t => { const s = document.getElementById('mpStatus'); if (s) s.textContent = t; };
+{ const hb = document.getElementById('hostBtn'), jb = document.getElementById('joinBtn'), jc = document.getElementById('joinCode');
+  if (hb) hb.addEventListener('click', () => { const code = roomCode(); sessionStorage.setItem('coop', JSON.stringify({ role: 'host', code })); location.reload(); });
+  if (jb) jb.addEventListener('click', () => { if (jc.style.display === 'none' || !jc.style.display) { jc.style.display = 'inline-block'; jc.focus(); return; } const code = (jc.value || '').trim().toUpperCase(); if (code.length < 4) { jc.focus(); return; } sessionStorage.setItem('coop', JSON.stringify({ role: 'client', code })); location.reload(); }); }
+let remotePlayer = null, netSendT = 0;
+if (coop) {
+  NET.on('err', t => setMP('⚠ Помилка зв’язку: ' + t + ' — спробуй ще раз'));
+  NET.on('data', d => { if (d && d.t === 'pos') remotePlayer = d; });
+  NET.on('open', () => { setMP('✅ Напарник у грі!'); if (state === 'title') startGame(); });
+  if (coop.role === 'host') { NET.on('ready', () => setMP('Кімната: ' + coop.code + '  — дай цей код напарнику, тоді тисни «Грати»')); NET.host(coop.code); setMP('Створення кімнати…'); }
+  else { NET.join(coop.code); setMP('Приєднання до кімнати ' + coop.code + '…'); }
+}
 const isMobile = () => matchMedia('(pointer:coarse)').matches || innerWidth < 820;
 function tryFullscreen() {
   if (!isMobile()) return;
@@ -889,6 +909,14 @@ function draw() {
     ctx.restore();
   }
 
+  // co-op partner (other player on the same map)
+  if (remotePlayer) {
+    spr(IMG.player[remotePlayer.fr || 0], remotePlayer.x - 3, remotePlayer.y - 8);
+    const tx = Math.round(remotePlayer.x + 9 - cam.x), ty = Math.round(remotePlayer.y - 16 - cam.y);
+    ctx.fillStyle = '#9fd0ff'; ctx.font = 'bold 11px "Trebuchet MS",sans-serif'; ctx.textAlign = 'center'; ctx.fillText('2P', tx, ty); ctx.textAlign = 'left';
+    if (typeof remotePlayer.h === 'number') { ctx.fillStyle = 'rgba(0,0,0,.5)'; ctx.fillRect(tx - 14, ty + 4, 28, 3); ctx.fillStyle = '#7fe07f'; ctx.fillRect(tx - 14, ty + 4, 28 * Math.max(0, remotePlayer.h) / 100, 3); }
+  }
+
   for (const p of particles) { ctx.globalAlpha = Math.max(0, p.life / p.max); ctx.fillStyle = p.color; ctx.fillRect(Math.round(p.x - cam.x - p.size / 2), Math.round(p.y - cam.y - p.size / 2), p.size, p.size); }
   ctx.globalAlpha = 1;
 
@@ -1175,6 +1203,10 @@ let last = 0;
 function frame(t) {
   const dt = Math.min((t - last) / 1000, 0.05); last = t;
   update(dt); draw();
+  if (coop && NET.connected()) {
+    netSendT -= dt;
+    if (netSendT <= 0) { NET.send({ t: 'pos', x: Math.round(player.x), y: Math.round(player.y), fx: +face.x.toFixed(2), fy: +face.y.toFixed(2), fr: player.frame, h: Math.round(health) }); netSendT = 0.06; }
+  }
   if ((state === 'win' || state === 'gameover') && !endShown) { endShown = true; showEndScreen(); }
   requestAnimationFrame(frame);
 }
