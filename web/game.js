@@ -360,6 +360,8 @@ function buildSnapshot() {
     z, bu: bullets.map(b => [Math.round(b.x), Math.round(b.y), b.color]),
     eb: eBullets.map(b => [Math.round(b.x), Math.round(b.y), b.big ? 1 : 0]),
     co: coins.map(c => [Math.round(c.x), Math.round(c.y), c.v || 1]),
+    lt: loot.map(l => [Math.round(l.x), Math.round(l.y), l.weapon]),
+    ac: ammoCrates.map(a => [Math.round(a.x), Math.round(a.y)]),
     wm: woman && woman.active ? [Math.round(woman.x), Math.round(woman.y), woman.frame | 0, womanRescued ? 1 : 0, womanDead ? 1 : 0] : null,
     st: state,
   };
@@ -379,6 +381,8 @@ function applySnapshot(s) {
   bullets.length = 0; for (const a of s.bu) bullets.push({ x: a[0], y: a[1], color: a[2], vx: 0, vy: 0, life: 1, dmg: 0 });
   eBullets.length = 0; for (const a of s.eb) eBullets.push({ x: a[0], y: a[1], big: !!a[2], color: a[2] ? '#c46bff' : '#ff5a4a', vx: 0, vy: 0, life: 1, dmg: 0 });
   coins.length = 0; for (const a of s.co) coins.push({ x: a[0], y: a[1], v: a[2] });
+  loot.length = 0; if (s.lt) for (const a of s.lt) loot.push({ x: a[0], y: a[1], w: 22, h: 18, weapon: a[2] });
+  ammoCrates.length = 0; if (s.ac) for (const a of s.ac) ammoCrates.push({ x: a[0], y: a[1], w: 20, h: 20 });
   if (s.wm) { woman.active = true; woman.x = s.wm[0]; woman.y = s.wm[1]; woman.frame = s.wm[2]; womanRescued = !!s.wm[3]; womanDead = !!s.wm[4]; }
   else if (woman) woman.active = false;
   if ((s.st === 'win' || s.st === 'gameover') && state === 'play') state = s.st;   // end together (never knock client back to title)
@@ -788,6 +792,7 @@ function update(dt) {
   ammoCrates = ammoCrates.filter(a => {
     if (WEAPONS[curW].mag !== Infinity && reserve[curW] < MAX_MAGS && aabb(player.x, player.y, player.w, player.h, a.x, a.y, a.w, a.h)) { reserve[curW] = Math.min(MAX_MAGS, reserve[curW] + 1); spawnBurst(a.x + 10, a.y + 8, '#ffd23f', 8, 90, 2); AUDIO.sfx.pickup(); showToast('+ магазин (' + WEAPONS[curW].name + ')'); return false; }
     if (woman && woman.active && !womanRescued && woman.weapon != null && woman.ammo < WEAPONS[woman.weapon].mag * 3 && aabb(woman.x, woman.y, woman.w, woman.h, a.x, a.y, a.w, a.h)) { woman.ammo = WEAPONS[woman.weapon].mag * 3; spawnBurst(a.x + 10, a.y + 8, '#ffd23f', 8, 90, 2); AUDIO.sfx.pickup(); showToast('Жінка поповнила набої'); return false; }
+    if (player2 && player2.active && !player2.dead && aabb(player2.x, player2.y, player2.w, player2.h, a.x, a.y, a.w, a.h)) { totalCoins += 3; coinsTotal += 3; score += 15; spawnBurst(a.x + 10, a.y + 8, '#ffd23f', 8, 90, 2); AUDIO.sfx.coin(); return false; }   // P2 has infinite ammo → bonus coins
     return true;
   });
   for (let i = loot.length - 1; i >= 0; i--) { const a = loot[i]; if (aabb(player.x, player.y, player.w, player.h, a.x, a.y, a.w, a.h)) {
@@ -796,6 +801,10 @@ function update(dt) {
     if (justStarters) curW = a.weapon;                                     // auto-equip the first looted gun
     spawnBurst(a.x + 11, a.y + 9, WEAPONS[a.weapon].color, 14, 130, 3); AUDIO.sfx.pickup();
     showToast('Нова зброя: ' + WEAPONS[a.weapon].name + (justStarters ? '!' : ' (натисни ' + (a.weapon + 1) + ')'));
+    loot.splice(i, 1); continue;
+  }
+  if (player2 && player2.active && !player2.dead && aabb(player2.x, player2.y, player2.w, player2.h, a.x, a.y, a.w, a.h)) {   // P2 already has all guns → convert to coins
+    totalCoins += 5; coinsTotal += 5; score += 25; spawnBurst(a.x + 11, a.y + 9, WEAPONS[a.weapon].color, 14, 130, 3); AUDIO.sfx.coin();
     loot.splice(i, 1); continue;
   }
   // the escorted woman can grab a weapon too and fight with it
