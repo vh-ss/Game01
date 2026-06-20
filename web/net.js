@@ -1,47 +1,61 @@
-// Minimal P2P layer over PeerJS (free cloud signalling) for 2-player co-op.
-// STUN works on the same Wi-Fi / friendly NAT. For mobile-data (LTE↔LTE, carrier
-// NAT) a TURN relay is required — plug free TURN creds into window.COOP_TURN
-// (see turn.js) and they get merged into the ICE config automatically.
+// 2-player co-op transport over a free public MQTT broker (WebSocket).
+// Both players connect OUTBOUND to the broker, which relays messages between
+// them — so it works on ANY network (different Wi-Fi, LTE, NAT, AP-isolation),
+// with no TURN and no registration. Same NET API as before.
 (function () {
-  let peer = null, conn = null, role = 'solo';
+  let client = null, role = 'solo', connected = false, topicOut = '', topicIn = '', hello = null;
   const cb = {};
   const fire = (n, a) => { if (cb[n]) cb[n](a); };
 
-  const iceServers = [
-    { urls: 'stun:stun.l.google.com:19302' },
-    { urls: 'stun:stun1.l.google.com:19302' },
-  ];
-  if (Array.isArray(window.COOP_TURN)) for (const s of window.COOP_TURN) iceServers.push(s);   // optional TURN relays
-  const peerOpts = { config: { iceServers, sdpSemantics: 'unified-plan' }, debug: 1 };
+  // Public MQTT brokers that speak secure WebSocket (wss, required on GitHub Pages).
+  const BROKERS = ['wss://broker.emqx.io:8084/mqtt', 'wss://broker.hivemq.com:8884/mqtt'];
+  let bi = 0;
 
-  function bind(c) {
-    conn = c;
-    c.on('open', () => fire('open'));
-    c.on('data', d => fire('data', d));
-    c.on('close', () => fire('close'));
-    c.on('error', e => fire('err', (e && e.type) || 'conn'));
+  function start(code, mineOut, mineIn, isHost) {
+    role = isHost ? 'host' : 'client';
+    topicOut = 'punktown/' + code + '/' + mineOut;
+    topicIn = 'punktown/' + code + '/' + mineIn;
+    connectBroker(code, isHost);
   }
-  function watchServer(p) { p.on('disconnected', () => { try { p.reconnect(); } catch (e) {} }); }
+  function connectBroker(code, isHost) {
+    const id = 'punk-' + code + '-' + Math.floor(Math.random() * 1e9).toString(36);
+    let opened = false;
+    client = mqtt.connect(BROKERS[bi], { clientId: id, clean: true, connectTimeout: 7000, reconnectPeriod: 3000, keepalive: 30 });
+
+    client.on('connect', () => {
+      opened = true;
+      client.subscribe(topicIn, { qos: 0 }, err => { if (err) fire('err', 'subscribe'); });
+      if (isHost) fire('ready', code);
+      startHello();
+    });
+    client.on('message', (t, payload) => {
+      let d; try { d = JSON.parse(payload.toString()); } catch (e) { return; }
+      if (!connected) { connected = true; stopHello(); fire('open'); }
+      if (d && d.t !== '__hello') fire('data', d);
+    });
+    client.on('error', () => { if (!opened) tryNextBroker(code, isHost); });
+    client.on('close', () => { if (connected) { connected = false; stopHello(); fire('close'); } });
+  }
+  function tryNextBroker(code, isHost) {
+    // first broker unreachable → fall back to the next one
+    try { client.end(true); } catch (e) {}
+    bi++;
+    if (bi < BROKERS.length) connectBroker(code, isHost);
+    else { bi = 0; fire('err', 'broker'); }
+  }
+  function startHello() {
+    // both sides beat a hello until the link is confirmed, so join order doesn't matter
+    const beat = () => { if (client && client.connected) client.publish(topicOut, JSON.stringify({ t: '__hello' }), { qos: 0 }); };
+    beat(); stopHello(); hello = setInterval(beat, 1000);
+  }
+  function stopHello() { if (hello) { clearInterval(hello); hello = null; } }
 
   window.NET = {
     role: () => role,
-    connected: () => !!(conn && conn.open),
-    host(code) {
-      role = 'host';
-      peer = new Peer('punk-' + code, peerOpts);
-      watchServer(peer);
-      peer.on('open', () => fire('ready', code));
-      peer.on('connection', c => bind(c));
-      peer.on('error', e => fire('err', (e && e.type) || 'peer'));
-    },
-    join(code) {
-      role = 'client';
-      peer = new Peer(peerOpts);
-      watchServer(peer);
-      peer.on('open', () => bind(peer.connect('punk-' + code, { reliable: true })));
-      peer.on('error', e => fire('err', (e && e.type) || 'peer'));
-    },
-    send(o) { if (conn && conn.open) conn.send(o); },
+    connected: () => connected,
+    host(code) { start(code, 'h2c', 'c2h', true); },
+    join(code) { start(code, 'c2h', 'h2c', false); },
+    send(o) { if (client && client.connected) client.publish(topicOut, JSON.stringify(o), { qos: 0 }); },
     on(n, f) { cb[n] = f; },
   };
 })();
