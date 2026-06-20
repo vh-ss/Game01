@@ -327,7 +327,7 @@ if (coop) {
   NET.on('close', () => { setMP('⚠ Напарник відключився'); remotePlayer = null; if (NET.role() === 'host') { player2 = null; remoteInput = null; } });
   NET.on('data', d => { if (!d) return; if (d.t === 'in') remoteInput = d; else if (d.t === 'snap') netSnap = d; });
   if (coop.role === 'host') { NET.on('ready', () => setMP('Кімната: ' + coop.code + '  — дай цей код напарнику, тоді тисни «Грати»')); NET.host(coop.code); setMP('Створення кімнати…'); }
-  else { NET.join(coop.code); setMP('Приєднання до кімнати ' + coop.code + '…'); }
+  else { player.x += 36; NET.join(coop.code); setMP('Приєднання до кімнати ' + coop.code + '…'); }   // offset so the two players don't spawn stacked
 }
 // ---- host: build a world snapshot for the client (host is authoritative) ----
 function buildSnapshot() {
@@ -368,7 +368,7 @@ function applySnapshot(s) {
   coins.length = 0; for (const a of s.co) coins.push({ x: a[0], y: a[1], v: a[2] });
   if (s.wm) { woman.active = true; woman.x = s.wm[0]; woman.y = s.wm[1]; woman.frame = s.wm[2]; womanRescued = !!s.wm[3]; womanDead = !!s.wm[4]; }
   else if (woman) woman.active = false;
-  if (s.st && s.st !== 'play' && state === 'play') state = s.st;
+  if ((s.st === 'win' || s.st === 'gameover') && state === 'play') state = s.st;   // end together (never knock client back to title)
 }
 // ---- host: drive player2 (the client's character) from received input ----
 function updateP2(dt) {
@@ -419,6 +419,9 @@ function updateClient(dt) {
   NET.send({ t: 'in', x: Math.round(player.x), y: Math.round(player.y), fx: +face.x.toFixed(2), fy: +face.y.toFixed(2), fr: player.frame,
     fire: doFire, ax: +ax.toFixed(2), ay: +ay.toFixed(2),
     dmg: Math.round(w.dmg * dmgMul), rate: w.rate, spd: w.speed || 620, col: w.color, pel: w.pellets || 1, spr: w.spread || 0, melee: w.type === 'melee' });
+  // camera follows the client's own character (update() returns early for clients, so do it here)
+  cam.x = clamp(player.x + player.w / 2 - VIEW_W / 2, 0, LW - VIEW_W);
+  cam.y = clamp(player.y + player.h / 2 - VIEW_H / 2, 0, LH - VIEW_H);
 }
 const isMobile = () => matchMedia('(pointer:coarse)').matches || innerWidth < 820;
 function tryFullscreen() {
