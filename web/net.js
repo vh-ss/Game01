@@ -7,8 +7,9 @@
   const cb = {};
   const fire = (n, a) => { if (cb[n]) cb[n](a); };
 
-  // Public MQTT brokers that speak secure WebSocket (wss, required on GitHub Pages).
-  const BROKERS = ['wss://broker.emqx.io:8084/mqtt', 'wss://broker.hivemq.com:8884/mqtt'];
+  // Public MQTT brokers (secure WebSocket, required on GitHub Pages), ordered by
+  // measured latency — EU brokers first (lowest ping for UA), EMQX last (~3× slower).
+  const BROKERS = ['wss://broker.hivemq.com:8884/mqtt', 'wss://test.mosquitto.org:8081/mqtt', 'wss://broker.emqx.io:8084/mqtt'];
   let bi = 0;
 
   function start(code, mineOut, mineIn, isHost) {
