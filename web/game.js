@@ -317,7 +317,7 @@ const setMP = t => { const s = document.getElementById('mpStatus'); if (s) s.tex
 { const hb = document.getElementById('hostBtn'), jb = document.getElementById('joinBtn'), jc = document.getElementById('joinCode');
   if (hb) hb.addEventListener('click', () => { const code = roomCode(); sessionStorage.setItem('coop', JSON.stringify({ role: 'host', code })); location.reload(); });
   if (jb) jb.addEventListener('click', () => { if (jc.style.display === 'none' || !jc.style.display) { jc.style.display = 'inline-block'; jc.focus(); return; } const code = (jc.value || '').trim().toUpperCase(); if (code.length < 4) { jc.focus(); return; } sessionStorage.setItem('coop', JSON.stringify({ role: 'client', code })); location.reload(); }); }
-let remotePlayer = null, player2 = null, remoteInput = null, netSnap = null, netSendT = 0, netInT = 0;
+let remotePlayer = null, player2 = null, remoteInput = null, netSnap = null, netSnapNew = false, netSendT = 0, netInT = 0;
 const ZTYPES = ['normal', 'runner', 'tank', 'exploder'];
 const ZTI = { normal: 0, runner: 1, tank: 2, exploder: 3 };
 function spawnPlayer2() { const h = homes[0]; player2 = { x: h.x + 44, y: h.y + 40, w: 18, h: 22, face: { x: 1, y: 0 }, frame: 0, health: 100, invuln: 0, flash: 0, fireCD: 0, dead: false, respawnT: 0, active: true }; }
@@ -331,7 +331,7 @@ if (coop) {
   });
   NET.on('open', () => { setMP('✅ Напарник у грі!'); if (NET.role() === 'host') spawnPlayer2(); if (state === 'title') startGame(); });
   NET.on('close', () => { setMP('⚠ Напарник відключився'); remotePlayer = null; if (NET.role() === 'host') { player2 = null; remoteInput = null; } });
-  NET.on('data', d => { if (!d) return; if (d.t === 'in') remoteInput = d; else if (d.t === 'snap') netSnap = d; });
+  NET.on('data', d => { if (!d) return; if (d.t === 'in') remoteInput = d; else if (d.t === 'snap') { netSnap = d; netSnapNew = true; } else if (d.t === 'grab') hostGrab(d); });
   if (coop.role === 'host') { NET.on('ready', () => setMP('Кімната: ' + coop.code + '  — дай цей код напарнику, тоді тисни «Грати»')); NET.host(coop.code); setMP('Створення кімнати…'); }
   else { player.x += 36; NET.join(coop.code); setMP('Приєднання до кімнати ' + coop.code + '…'); }   // offset so the two players don't spawn stacked
 }
@@ -354,43 +354,50 @@ function buildSnapshot() {
     if (e.hidden || e.dead) continue;
     if (!e.isBoss && !snapNear(e.x, e.y)) continue;
     let fl = 0; if (e.crim) fl |= 1; if (e.armed) fl |= 2; if (e.isBoss) fl |= 4;
-    z.push([Math.round(e.x), Math.round(e.y), e.frame | 0, ZTI[e.ztype] || 0, fl, e.w, e.h, Math.round(e.hp), Math.round(e.maxhp || e.hp), Math.round((e.aimx || 0) * 100), Math.round((e.aimy || 0) * 100), e.zw | 0]);
+    z.push([Math.round(e.x), Math.round(e.y), e.frame | 0, ZTI[e.ztype] || 0, fl, e.w, e.h, Math.round(e.hp), Math.round(e.maxhp || e.hp), Math.round((e.aimx || 0) * 100), Math.round((e.aimy || 0) * 100), e.zw | 0, Math.round(e.vx || 0), Math.round(e.vy || 0)]);
   }
   return {
     t: 'snap', nf: +nightF.toFixed(3),
-    p1: { x: Math.round(player.x), y: Math.round(player.y), fx: +face.x.toFixed(2), fy: +face.y.toFixed(2), fr: player.frame, h: Math.round(health), dr: driving ? 1 : 0, ca: driving ? +Math.atan2(face.y, face.x).toFixed(2) : 0 },
+    p1: { x: Math.round(player.x), y: Math.round(player.y), fx: +face.x.toFixed(2), fy: +face.y.toFixed(2), fr: player.frame, h: Math.round(health), dr: driving ? 1 : 0, ca: driving ? +Math.atan2(face.y, face.x).toFixed(2) : 0, vx: Math.round(player.vx || 0), vy: Math.round(player.vy || 0) },
     mh: player2 ? Math.round(player2.health) : 100,
     cn: totalCoins, kl: kills, sc: score, di: district,
     fl: [hasKey ? 1 : 0, womanFreed ? 1 : 0, womanRescued ? 1 : 0, bossDead ? 1 : 0],
     bn: boss && !bossDead ? boss.name : '',
     z,
-    bu: bullets.filter(b => snapNear(b.x, b.y)).map(b => [Math.round(b.x), Math.round(b.y), b.color]),
-    eb: eBullets.filter(b => snapNear(b.x, b.y)).map(b => [Math.round(b.x), Math.round(b.y), b.big ? 1 : 0]),
+    bu: bullets.filter(b => snapNear(b.x, b.y)).map(b => [Math.round(b.x), Math.round(b.y), b.color, Math.round(b.vx), Math.round(b.vy)]),
+    eb: eBullets.filter(b => snapNear(b.x, b.y)).map(b => [Math.round(b.x), Math.round(b.y), b.big ? 1 : 0, Math.round(b.vx), Math.round(b.vy)]),
     co: coins.filter(c => snapNear(c.x, c.y)).map(c => [Math.round(c.x), Math.round(c.y), c.v || 1]),
     lt: loot.filter(l => snapNear(l.x, l.y)).map(l => [Math.round(l.x), Math.round(l.y), l.weapon]),
     ac: ammoCrates.filter(a => snapNear(a.x, a.y)).map(a => [Math.round(a.x), Math.round(a.y)]),
-    wm: woman && woman.active ? [Math.round(woman.x), Math.round(woman.y), woman.frame | 0, womanRescued ? 1 : 0, womanDead ? 1 : 0] : null,
+    al: allies.filter(a => snapNear(a.x, a.y)).map(a => [Math.round(a.x), Math.round(a.y), a.frame | 0, a.joined ? 1 : 0, Math.round(a.hp), Math.round(a.maxhp || 30), Math.round(a.vx || 0), Math.round(a.vy || 0)]),
+    wm: woman && woman.active ? [Math.round(woman.x), Math.round(woman.y), woman.frame | 0, womanRescued ? 1 : 0, womanDead ? 1 : 0, Math.round(woman.vx || 0), Math.round(woman.vy || 0)] : null,
     st: state,
   };
+}
+// host: client (player2) grabbed a world item → remove the nearest matching one
+function hostGrab(d) {
+  if (d.kind === 'loot') { let bi = -1, bd = 40 * 40; for (let i = 0; i < loot.length; i++) { const q = (loot[i].x - d.x) ** 2 + (loot[i].y - d.y) ** 2; if (q < bd) { bd = q; bi = i; } } if (bi >= 0) loot.splice(bi, 1); }
+  else if (d.kind === 'ammo') { let bi = -1, bd = 40 * 40; for (let i = 0; i < ammoCrates.length; i++) { const q = (ammoCrates[i].x - d.x) ** 2 + (ammoCrates[i].y - d.y) ** 2; if (q < bd) { bd = q; bi = i; } } if (bi >= 0) ammoCrates.splice(bi, 1); }
 }
 // ---- client: apply the host's snapshot into local state for rendering ----
 function applySnapshot(s) {
   nightF = s.nf;
-  remotePlayer = s.p1;
+  remotePlayer = s.p1;   // has vx/vy for extrapolation between snapshots
   health = s.mh; totalCoins = s.cn; kills = s.kl; score = s.sc; district = s.di;
   hasKey = !!s.fl[0]; womanFreed = !!s.fl[1]; womanRescued = !!s.fl[2]; bossDead = !!s.fl[3];
   zombies.length = 0;
   for (const a of s.z) zombies.push({
     x: a[0], y: a[1], frame: a[2], ztype: ZTYPES[a[3]], crim: !!(a[4] & 1), armed: !!(a[4] & 2), isBoss: !!(a[4] & 4),
-    w: a[5], h: a[6], hp: a[7], maxhp: a[8], aimx: a[9] / 100, aimy: a[10] / 100, zw: a[11], name: s.bn, hidden: false, flash: 0, sm: 1, dead: false,
+    w: a[5], h: a[6], hp: a[7], maxhp: a[8], aimx: a[9] / 100, aimy: a[10] / 100, zw: a[11], vx: a[12] || 0, vy: a[13] || 0, name: s.bn, hidden: false, flash: 0, sm: 1, dead: false,
   });
   const bz = zombies.find(z => z.isBoss); if (bz) boss = bz;   // keep boss pointer correct for the objective arrow
-  bullets.length = 0; for (const a of s.bu) bullets.push({ x: a[0], y: a[1], color: a[2], vx: 0, vy: 0, life: 1, dmg: 0 });
-  eBullets.length = 0; for (const a of s.eb) eBullets.push({ x: a[0], y: a[1], big: !!a[2], color: a[2] ? '#c46bff' : '#ff5a4a', vx: 0, vy: 0, life: 1, dmg: 0 });
+  bullets.length = 0; for (const a of s.bu) bullets.push({ x: a[0], y: a[1], color: a[2], vx: a[3] || 0, vy: a[4] || 0, life: 1, dmg: 0 });
+  eBullets.length = 0; for (const a of s.eb) eBullets.push({ x: a[0], y: a[1], big: !!a[2], color: a[2] ? '#c46bff' : '#ff5a4a', vx: a[3] || 0, vy: a[4] || 0, life: 1, dmg: 0 });
   coins.length = 0; for (const a of s.co) coins.push({ x: a[0], y: a[1], v: a[2] });
   loot.length = 0; if (s.lt) for (const a of s.lt) loot.push({ x: a[0], y: a[1], w: 22, h: 18, weapon: a[2] });
   ammoCrates.length = 0; if (s.ac) for (const a of s.ac) ammoCrates.push({ x: a[0], y: a[1], w: 20, h: 20 });
-  if (s.wm) { woman.active = true; woman.x = s.wm[0]; woman.y = s.wm[1]; woman.frame = s.wm[2]; womanRescued = !!s.wm[3]; womanDead = !!s.wm[4]; }
+  allies.length = 0; if (s.al) for (const a of s.al) allies.push({ x: a[0], y: a[1], w: 18, h: 22, frame: a[2], joined: !!a[3], hp: a[4], maxhp: a[5], vx: a[6] || 0, vy: a[7] || 0, flash: 0 });
+  if (s.wm) { woman.active = true; woman.x = s.wm[0]; woman.y = s.wm[1]; woman.frame = s.wm[2]; womanRescued = !!s.wm[3]; womanDead = !!s.wm[4]; woman.vx = s.wm[5] || 0; woman.vy = s.wm[6] || 0; }
   else if (woman) woman.active = false;
   if ((s.st === 'win' || s.st === 'gameover') && state === 'play') state = s.st;   // end together (never knock client back to title)
 }
@@ -401,6 +408,7 @@ function updateP2(dt) {
   player2.flash = Math.max(0, player2.flash - dt);
   if (player2.dead) { player2.respawnT -= dt; if (player2.respawnT <= 0) { player2.dead = false; player2.health = 100; const h = homes[0]; player2.x = h.x + 44; player2.y = h.y + 40; } return; }
   player2.x = ri.x; player2.y = ri.y; player2.face.x = ri.fx; player2.face.y = ri.fy; player2.frame = ri.fr;
+  player2.dr = ri.dr ? 1 : 0; player2.ca = ri.ca || 0;   // driving state (for partner-car render + run-over)
   player2.fireCD = Math.max(0, player2.fireCD - dt);
   if (ri.fire && player2.fireCD <= 0) {
     const mx = player2.x + 9, my = player2.y + 11, ax = ri.ax || 1, ay = ri.ay || 0, base = Math.atan2(ay, ax);
@@ -414,10 +422,34 @@ function updateP2(dt) {
     player2.fireCD = Math.max(0.08, ri.rate || 0.18);
   }
 }
+// client: grab weapon/ammo drops locally, then ask the host to remove the world item
+function clientPickups() {
+  for (let i = loot.length - 1; i >= 0; i--) { const a = loot[i];
+    if (aabb(player.x, player.y, player.w, player.h, a.x, a.y, a.w, a.h)) {
+      const justStarters = owned.filter(Boolean).length <= 2;
+      owned[a.weapon] = true; wAmmo[a.weapon] = WEAPONS[a.weapon].mag; if (justStarters) curW = a.weapon;
+      spawnBurst(a.x + 11, a.y + 9, WEAPONS[a.weapon].color, 14, 130, 3); AUDIO.sfx.pickup(); showToast('Нова зброя: ' + WEAPONS[a.weapon].name);
+      loot.splice(i, 1); NET.send({ t: 'grab', kind: 'loot', x: Math.round(a.x), y: Math.round(a.y) });
+    }
+  }
+  for (let i = ammoCrates.length - 1; i >= 0; i--) { const a = ammoCrates[i];
+    if (WEAPONS[curW].mag !== Infinity && reserve[curW] < MAX_MAGS && aabb(player.x, player.y, player.w, player.h, a.x, a.y, a.w, a.h)) {
+      reserve[curW] = Math.min(MAX_MAGS, reserve[curW] + 1); spawnBurst(a.x + 10, a.y + 8, '#ffd23f', 8, 90, 2); AUDIO.sfx.pickup(); showToast('+ магазин (' + WEAPONS[curW].name + ')');
+      ammoCrates.splice(i, 1); NET.send({ t: 'grab', kind: 'ammo', x: Math.round(a.x), y: Math.round(a.y) });
+    }
+  }
+}
 // ---- client: local movement + send input; world comes from snapshots ----
 function updateClient(dt) {
-  if (netSnap) applySnapshot(netSnap);
+  if (netSnapNew) { applySnapshot(netSnap); netSnapNew = false; }   // apply ONCE per snapshot…
+  for (const z of zombies) { z.x += (z.vx || 0) * dt; z.y += (z.vy || 0) * dt; }   // …extrapolate in between → smooth
+  for (const b of bullets) { b.x += (b.vx || 0) * dt; b.y += (b.vy || 0) * dt; }
+  for (const b of eBullets) { b.x += (b.vx || 0) * dt; b.y += (b.vy || 0) * dt; }
+  for (const a of allies) { a.x += (a.vx || 0) * dt; a.y += (a.vy || 0) * dt; }
+  if (remotePlayer) { remotePlayer.x += (remotePlayer.vx || 0) * dt; remotePlayer.y += (remotePlayer.vy || 0) * dt; }
+  if (woman && woman.active) { woman.x += (woman.vx || 0) * dt; woman.y += (woman.vy || 0) * dt; }
   if (state !== 'play') return;
+
   let ix = (keys.ArrowRight || keys.KeyD ? 1 : 0) - (keys.ArrowLeft || keys.KeyA ? 1 : 0);
   let iy = (keys.ArrowDown || keys.KeyS ? 1 : 0) - (keys.ArrowUp || keys.KeyW ? 1 : 0);
   if (tMove.active) { ix = tMove.mx; iy = tMove.my; }
@@ -425,30 +457,39 @@ function updateClient(dt) {
   if (moving) { face.x = ix / mag; face.y = iy / mag; }
   const running = (keys.ShiftLeft || keys.ShiftRight || (tMove.active && mag > 0.92)) && stamina > 0 && moving;
   const onSand = tileAt(player.x + player.w / 2, player.y + player.h / 2) === 3;
-  const sp = SPEED * spdMul * (running ? RUN_MULT : 1) * (onSand ? 0.5 : 1) * dt;
+  const sp = (driving ? 245 : SPEED * spdMul * (running ? RUN_MULT : 1) * (onSand ? 0.5 : 1)) * dt;
   let mvx = ix, mvy = iy; if (mag > 1) { mvx = ix / mag; mvy = iy / mag; }
   tryMove(player, mvx * sp, mvy * sp);
   if (moving) { player.walkT += dt * (running ? 1.5 : 1); player.frame = 1 + (Math.floor(player.walkT * 9) % 2); } else player.frame = 0;
   stamina = clamp(stamina + (running ? -STAM_DRAIN : STAM_REGEN) * dt, 0, STAM_MAX);
-  for (let i = 0; i < WEAPONS.length; i++) if (keys['Digit' + (i + 1)]) curW = i;   // client may use any weapon (infinite ammo)
+  nearVehicle = null; if (!driving) { let bd = 46 * 46; for (const v of vehicles) { const d = (v.x - player.x - 9) ** 2 + (v.y - player.y - 11) ** 2; if (d < bd) { bd = d; nearVehicle = v; } } }
+  clientPickups();
+
+  // weapon select (owned only) + auto-reload from a spare magazine
+  for (let i = 0; i < WEAPONS.length; i++) if (keys['Digit' + (i + 1)] && owned[i]) curW = i;
+  if (WEAPONS[curW].mag !== Infinity && wAmmo[curW] <= 0 && reserve[curW] > 0) { wAmmo[curW] = WEAPONS[curW].mag; reserve[curW]--; AUDIO.sfx.pickup(); }
+
   let aim = null;
   if (tFire.active) { aim = autoAim(); face.x = aim.x; face.y = aim.y; }
   let firing = false, ax = face.x, ay = face.y;
   if (mouse.down) { firing = true; ax = mouse.x + cam.x - (player.x + player.w / 2); ay = mouse.y + cam.y - (player.y + player.h / 2); const m = Math.hypot(ax, ay) || 1; ax /= m; ay /= m; }
   else if (tFire.active) { firing = true; ax = aim.x; ay = aim.y; }
   else if (keys.KeyF) { firing = true; }
-  fireCD -= dt;   // local muzzle SFX for feedback (the host does the real shooting)
-  if (firing && fireCD <= 0) { fireCD = WEAPONS[curW].rate; const w0 = WEAPONS[curW]; (w0.type === 'melee' ? AUDIO.sfx.melee : w0.type === 'flame' ? AUDIO.sfx.flame : AUDIO.sfx.shoot)(); }
-  // send input at ~25Hz (sending the HELD fire state, so a lost packet doesn't drop a shot)
+  const w = WEAPONS[curW], hasAmmo = w.mag === Infinity || wAmmo[curW] > 0;
+  fireCD -= dt;
+  if (firing && hasAmmo && fireCD <= 0) {   // client owns its ammo; host spawns the bullet
+    fireCD = w.rate; if (w.mag !== Infinity) wAmmo[curW]--;
+    (w.type === 'melee' ? AUDIO.sfx.melee : w.type === 'flame' ? AUDIO.sfx.flame : AUDIO.sfx.shoot)();
+  }
+  const sendFire = firing && hasAmmo;
   netInT -= dt;
   if (netInT <= 0) {
     netInT = 0.04;
-    const w = WEAPONS[curW];
     NET.send({ t: 'in', x: Math.round(player.x), y: Math.round(player.y), fx: +face.x.toFixed(2), fy: +face.y.toFixed(2), fr: player.frame,
-      fire: firing, ax: +ax.toFixed(2), ay: +ay.toFixed(2),
-      dmg: Math.round(w.dmg * dmgMul), rate: w.rate, spd: w.speed || 620, col: w.color, pel: w.pellets || 1, spr: w.spread || 0, melee: w.type === 'melee' });
+      fire: sendFire, ax: +ax.toFixed(2), ay: +ay.toFixed(2),
+      dmg: Math.round(w.dmg * dmgMul), rate: w.rate, spd: w.speed || 620, col: w.color, pel: w.pellets || 1, spr: w.spread || 0, melee: w.type === 'melee',
+      dr: driving ? 1 : 0, ca: driving ? +Math.atan2(face.y, face.x).toFixed(2) : 0 });
   }
-  // camera follows the client's own character (update() returns early for clients, so do it here)
   cam.x = clamp(player.x + player.w / 2 - VIEW_W / 2, 0, LW - VIEW_W);
   cam.y = clamp(player.y + player.h / 2 - VIEW_H / 2, 0, LH - VIEW_H);
 }
@@ -631,6 +672,7 @@ function update(dt) {
   const sp = (driving ? 245 : SPEED * spdMul * (running ? RUN_MULT : 1) * (onSand ? 0.5 : 1)) * dt;
   let mvx = ix, mvy = iy; if (mag > 1) { mvx = ix / mag; mvy = iy / mag; }
   tryMove(player, mvx * sp, mvy * sp);
+  player.vx = dt > 0 ? mvx * sp / dt : 0; player.vy = dt > 0 ? mvy * sp / dt : 0;   // px/s, for net smoothing
   if (moving) { player.walkT += dt * (running ? 1.5 : 1); player.frame = 1 + (Math.floor(player.walkT * 9) % 2); } else { player.frame = 0; }
   // nearest mountable vehicle
   nearVehicle = null; if (!driving) { let bd = 46 * 46; for (const v of vehicles) { const d = (v.x - player.x - 9) ** 2 + (v.y - player.y - 11) ** 2; if (d < bd) { bd = d; nearVehicle = v; } } }
@@ -728,9 +770,12 @@ function update(dt) {
         }
       } else hurt(z.ztype === 'tank' ? 26 : 16);
     }
-    if (player2 && player2.active && !player2.dead && player2.invuln <= 0 && !z.dead && aabb(player2.x, player2.y, player2.w, player2.h, z.x, z.y, z.w, z.h)) {
-      player2.health -= z.ztype === 'tank' ? 22 : 14; player2.invuln = 0.5; player2.flash = 0.14; spawnBurst(player2.x + 9, player2.y + 11, '#9fd0ff', 5, 80, 2);
-      if (player2.health <= 0) { player2.dead = true; player2.respawnT = 2.5; spawnBurst(player2.x + 9, player2.y + 11, '#ff5a4a', 14, 130, 3); }
+    if (player2 && player2.active && !player2.dead && !z.dead && aabb(player2.x, player2.y, player2.w, player2.h, z.x, z.y, z.w, z.h)) {
+      if (player2.dr) damageZombie(z, 999, Math.sign(z.x - player2.x), Math.sign(z.y - player2.y));   // run over while driving
+      else if (player2.invuln <= 0) {
+        player2.health -= z.ztype === 'tank' ? 22 : 14; player2.invuln = 0.5; player2.flash = 0.14; spawnBurst(player2.x + 9, player2.y + 11, '#9fd0ff', 5, 80, 2);
+        if (player2.health <= 0) { player2.dead = true; player2.respawnT = 2.5; spawnBurst(player2.x + 9, player2.y + 11, '#ff5a4a', 14, 130, 3); }
+      }
     }
   }
 
@@ -806,7 +851,6 @@ function update(dt) {
   ammoCrates = ammoCrates.filter(a => {
     if (WEAPONS[curW].mag !== Infinity && reserve[curW] < MAX_MAGS && aabb(player.x, player.y, player.w, player.h, a.x, a.y, a.w, a.h)) { reserve[curW] = Math.min(MAX_MAGS, reserve[curW] + 1); spawnBurst(a.x + 10, a.y + 8, '#ffd23f', 8, 90, 2); AUDIO.sfx.pickup(); showToast('+ магазин (' + WEAPONS[curW].name + ')'); return false; }
     if (woman && woman.active && !womanRescued && woman.weapon != null && woman.ammo < WEAPONS[woman.weapon].mag * 3 && aabb(woman.x, woman.y, woman.w, woman.h, a.x, a.y, a.w, a.h)) { woman.ammo = WEAPONS[woman.weapon].mag * 3; spawnBurst(a.x + 10, a.y + 8, '#ffd23f', 8, 90, 2); AUDIO.sfx.pickup(); showToast('Жінка поповнила набої'); return false; }
-    if (player2 && player2.active && !player2.dead && aabb(player2.x, player2.y, player2.w, player2.h, a.x, a.y, a.w, a.h)) { totalCoins += 3; coinsTotal += 3; score += 15; spawnBurst(a.x + 10, a.y + 8, '#ffd23f', 8, 90, 2); AUDIO.sfx.coin(); return false; }   // P2 has infinite ammo → bonus coins
     return true;
   });
   for (let i = loot.length - 1; i >= 0; i--) { const a = loot[i]; if (aabb(player.x, player.y, player.w, player.h, a.x, a.y, a.w, a.h)) {
@@ -815,10 +859,6 @@ function update(dt) {
     if (justStarters) curW = a.weapon;                                     // auto-equip the first looted gun
     spawnBurst(a.x + 11, a.y + 9, WEAPONS[a.weapon].color, 14, 130, 3); AUDIO.sfx.pickup();
     showToast('Нова зброя: ' + WEAPONS[a.weapon].name + (justStarters ? '!' : ' (натисни ' + (a.weapon + 1) + ')'));
-    loot.splice(i, 1); continue;
-  }
-  if (player2 && player2.active && !player2.dead && aabb(player2.x, player2.y, player2.w, player2.h, a.x, a.y, a.w, a.h)) {   // P2 already has all guns → convert to coins
-    totalCoins += 5; coinsTotal += 5; score += 25; spawnBurst(a.x + 11, a.y + 9, WEAPONS[a.weapon].color, 14, 130, 3); AUDIO.sfx.coin();
     loot.splice(i, 1); continue;
   }
   // the escorted woman can grab a weapon too and fight with it
