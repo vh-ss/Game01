@@ -317,7 +317,7 @@ const setMP = t => { const s = document.getElementById('mpStatus'); if (s) s.tex
 { const hb = document.getElementById('hostBtn'), jb = document.getElementById('joinBtn'), jc = document.getElementById('joinCode');
   if (hb) hb.addEventListener('click', () => { const code = roomCode(); sessionStorage.setItem('coop', JSON.stringify({ role: 'host', code })); location.reload(); });
   if (jb) jb.addEventListener('click', () => { if (jc.style.display === 'none' || !jc.style.display) { jc.style.display = 'inline-block'; jc.focus(); return; } const code = (jc.value || '').trim().toUpperCase(); if (code.length < 4) { jc.focus(); return; } sessionStorage.setItem('coop', JSON.stringify({ role: 'client', code })); location.reload(); }); }
-let remotePlayer = null, player2 = null, remoteInput = null, netSnap = null, netSendT = 0;
+let remotePlayer = null, player2 = null, remoteInput = null, netSnap = null, netSendT = 0, netInT = 0;
 const ZTYPES = ['normal', 'runner', 'tank', 'exploder'];
 const ZTI = { normal: 0, runner: 1, tank: 2, exploder: 3 };
 function spawnPlayer2() { const h = homes[0]; player2 = { x: h.x + 44, y: h.y + 40, w: 18, h: 22, face: { x: 1, y: 0 }, frame: 0, health: 100, invuln: 0, flash: 0, fireCD: 0, dead: false, respawnT: 0, active: true }; }
@@ -335,26 +335,40 @@ if (coop) {
   if (coop.role === 'host') { NET.on('ready', () => setMP('Кімната: ' + coop.code + '  — дай цей код напарнику, тоді тисни «Грати»')); NET.host(coop.code); setMP('Створення кімнати…'); }
   else { player.x += 36; NET.join(coop.code); setMP('Приєднання до кімнати ' + coop.code + '…'); }   // offset so the two players don't spawn stacked
 }
+// world interactions (key, door, …) should trigger from EITHER player
+function eitherOver(bx, by, bw, bh) {
+  if (aabb(player.x, player.y, player.w, player.h, bx, by, bw, bh)) return true;
+  if (player2 && player2.active && !player2.dead && aabb(player2.x, player2.y, player2.w, player2.h, bx, by, bw, bh)) return true;
+  return false;
+}
 // ---- host: build a world snapshot for the client (host is authoritative) ----
+// Only send what's near the client (player2) — keeps each packet tiny so the
+// public relay isn't flooded (that was the lag). The boss is always included.
+function snapNear(x, y) {
+  const R = 860, ax = player2 && player2.active ? player2.x + 9 : player.x + 9, ay = player2 && player2.active ? player2.y + 11 : player.y + 11;
+  return (x - ax) * (x - ax) + (y - ay) * (y - ay) < R * R;
+}
 function buildSnapshot() {
   const z = [];
   for (const e of zombies) {
     if (e.hidden || e.dead) continue;
+    if (!e.isBoss && !snapNear(e.x, e.y)) continue;
     let fl = 0; if (e.crim) fl |= 1; if (e.armed) fl |= 2; if (e.isBoss) fl |= 4;
     z.push([Math.round(e.x), Math.round(e.y), e.frame | 0, ZTI[e.ztype] || 0, fl, e.w, e.h, Math.round(e.hp), Math.round(e.maxhp || e.hp), Math.round((e.aimx || 0) * 100), Math.round((e.aimy || 0) * 100), e.zw | 0]);
   }
   return {
     t: 'snap', nf: +nightF.toFixed(3),
-    p1: { x: Math.round(player.x), y: Math.round(player.y), fx: +face.x.toFixed(2), fy: +face.y.toFixed(2), fr: player.frame, h: Math.round(health) },
+    p1: { x: Math.round(player.x), y: Math.round(player.y), fx: +face.x.toFixed(2), fy: +face.y.toFixed(2), fr: player.frame, h: Math.round(health), dr: driving ? 1 : 0, ca: driving ? +Math.atan2(face.y, face.x).toFixed(2) : 0 },
     mh: player2 ? Math.round(player2.health) : 100,
     cn: totalCoins, kl: kills, sc: score, di: district,
     fl: [hasKey ? 1 : 0, womanFreed ? 1 : 0, womanRescued ? 1 : 0, bossDead ? 1 : 0],
     bn: boss && !bossDead ? boss.name : '',
-    z, bu: bullets.map(b => [Math.round(b.x), Math.round(b.y), b.color]),
-    eb: eBullets.map(b => [Math.round(b.x), Math.round(b.y), b.big ? 1 : 0]),
-    co: coins.map(c => [Math.round(c.x), Math.round(c.y), c.v || 1]),
-    lt: loot.map(l => [Math.round(l.x), Math.round(l.y), l.weapon]),
-    ac: ammoCrates.map(a => [Math.round(a.x), Math.round(a.y)]),
+    z,
+    bu: bullets.filter(b => snapNear(b.x, b.y)).map(b => [Math.round(b.x), Math.round(b.y), b.color]),
+    eb: eBullets.filter(b => snapNear(b.x, b.y)).map(b => [Math.round(b.x), Math.round(b.y), b.big ? 1 : 0]),
+    co: coins.filter(c => snapNear(c.x, c.y)).map(c => [Math.round(c.x), Math.round(c.y), c.v || 1]),
+    lt: loot.filter(l => snapNear(l.x, l.y)).map(l => [Math.round(l.x), Math.round(l.y), l.weapon]),
+    ac: ammoCrates.filter(a => snapNear(a.x, a.y)).map(a => [Math.round(a.x), Math.round(a.y)]),
     wm: woman && woman.active ? [Math.round(woman.x), Math.round(woman.y), woman.frame | 0, womanRescued ? 1 : 0, womanDead ? 1 : 0] : null,
     st: state,
   };
@@ -423,12 +437,17 @@ function updateClient(dt) {
   if (mouse.down) { firing = true; ax = mouse.x + cam.x - (player.x + player.w / 2); ay = mouse.y + cam.y - (player.y + player.h / 2); const m = Math.hypot(ax, ay) || 1; ax /= m; ay /= m; }
   else if (tFire.active) { firing = true; ax = aim.x; ay = aim.y; }
   else if (keys.KeyF) { firing = true; }
-  fireCD -= dt; let doFire = false;
-  if (firing && fireCD <= 0) { doFire = true; fireCD = WEAPONS[curW].rate; const w = WEAPONS[curW]; (w.type === 'melee' ? AUDIO.sfx.melee : w.type === 'flame' ? AUDIO.sfx.flame : AUDIO.sfx.shoot)(); }
-  const w = WEAPONS[curW];
-  NET.send({ t: 'in', x: Math.round(player.x), y: Math.round(player.y), fx: +face.x.toFixed(2), fy: +face.y.toFixed(2), fr: player.frame,
-    fire: doFire, ax: +ax.toFixed(2), ay: +ay.toFixed(2),
-    dmg: Math.round(w.dmg * dmgMul), rate: w.rate, spd: w.speed || 620, col: w.color, pel: w.pellets || 1, spr: w.spread || 0, melee: w.type === 'melee' });
+  fireCD -= dt;   // local muzzle SFX for feedback (the host does the real shooting)
+  if (firing && fireCD <= 0) { fireCD = WEAPONS[curW].rate; const w0 = WEAPONS[curW]; (w0.type === 'melee' ? AUDIO.sfx.melee : w0.type === 'flame' ? AUDIO.sfx.flame : AUDIO.sfx.shoot)(); }
+  // send input at ~25Hz (sending the HELD fire state, so a lost packet doesn't drop a shot)
+  netInT -= dt;
+  if (netInT <= 0) {
+    netInT = 0.04;
+    const w = WEAPONS[curW];
+    NET.send({ t: 'in', x: Math.round(player.x), y: Math.round(player.y), fx: +face.x.toFixed(2), fy: +face.y.toFixed(2), fr: player.frame,
+      fire: firing, ax: +ax.toFixed(2), ay: +ay.toFixed(2),
+      dmg: Math.round(w.dmg * dmgMul), rate: w.rate, spd: w.speed || 620, col: w.color, pel: w.pellets || 1, spr: w.spread || 0, melee: w.type === 'melee' });
+  }
   // camera follows the client's own character (update() returns early for clients, so do it here)
   cam.x = clamp(player.x + player.w / 2 - VIEW_W / 2, 0, LW - VIEW_W);
   cam.y = clamp(player.y + player.h / 2 - VIEW_H / 2, 0, LH - VIEW_H);
@@ -738,16 +757,18 @@ function update(dt) {
     if (player2 && player2.active && !player2.dead && aabb(player2.x, player2.y, player2.w, player2.h, co.x - 10, co.y - 10, 28, 28)) { const v = co.v || 1; totalCoins += v; coinsTotal += v; score += v * 5; spawnBurst(co.x, co.y, '#ffd23f', 6 + v * 2, 80, 2); AUDIO.sfx.coin(); return false; }
     return true;
   });
-  // key pickup
-  if (keyItem && !keyItem.got && aabb(player.x, player.y, player.w, player.h, keyItem.x - 6, keyItem.y - 6, 28, 28)) { keyItem.got = true; hasKey = true; AUDIO.sfx.pickup(); spawnBurst(keyItem.x + 6, keyItem.y + 6, '#ffd23f', 16, 140, 3); showToast('Знайдено ключ! Іди до будинку 🏚'); }
-  // unlock the house with the key
-  if (hasKey && !womanFreed && lockedHouse && aabb(player.x, player.y, player.w, player.h, lockedHouse.x - 10, lockedHouse.y, 116, 110)) {
+  // key pickup (either player)
+  if (keyItem && !keyItem.got && eitherOver(keyItem.x - 6, keyItem.y - 6, 28, 28)) { keyItem.got = true; hasKey = true; AUDIO.sfx.pickup(); spawnBurst(keyItem.x + 6, keyItem.y + 6, '#ffd23f', 16, 140, 3); showToast('Знайдено ключ! Іди до будинку 🏚'); }
+  // unlock the house with the key (either player)
+  if (hasKey && !womanFreed && lockedHouse && eitherOver(lockedHouse.x - 10, lockedHouse.y, 116, 110)) {
     womanFreed = true; woman.active = true; AUDIO.sfx.pickup(); spawnBurst(lockedHouse.x + 48, lockedHouse.y + 60, '#ffd23f', 20, 160, 3); say('Дякую, що відчинив! Прикрий мене — і веди ДОДОМУ, будь ласка.');
   }
   // woman: follow, take damage, escort, or die
   if (woman && woman.active && !womanRescued && !womanDead) {
     woman.invuln = Math.max(0, woman.invuln - dt); woman.flash = Math.max(0, woman.flash - dt);
-    const wcx = woman.x + woman.w / 2, wcy = woman.y + woman.h / 2, pcx2 = player.x + player.w / 2, pcy2 = player.y + player.h / 2;
+    const wcx = woman.x + woman.w / 2, wcy = woman.y + woman.h / 2;
+    let pcx2 = player.x + player.w / 2, pcy2 = player.y + player.h / 2;
+    if (player2 && player2.active && !player2.dead) { const p2x = player2.x + 9, p2y = player2.y + 11; if ((p2x - wcx) ** 2 + (p2y - wcy) ** 2 < (pcx2 - wcx) ** 2 + (pcy2 - wcy) ** 2) { pcx2 = p2x; pcy2 = p2y; } }
     // pick a target: nearest weapon if unarmed, nearest ammo crate if out of ammo, else the player
     let tx = pcx2, ty = pcy2, stop = 42;
     if (woman.weapon == null && loot.length) {
@@ -1040,7 +1061,8 @@ function draw() {
   if (partner) {
     const pf = (partner.fr != null ? partner.fr : partner.frame) | 0;
     const ph = partner.h != null ? partner.h : partner.health;
-    spr(IMG.player[pf || 0], partner.x - 3, partner.y - 8);
+    if (partner.dr) drawCar(partner.x + 9, partner.y + 11, partner.ca || 0, '#3a6ea5', 1.2);   // partner is driving
+    else spr(IMG.player[pf || 0], partner.x - 3, partner.y - 8);
     const tx = Math.round(partner.x + 9 - cam.x), ty = Math.round(partner.y - 16 - cam.y);
     ctx.fillStyle = '#9fd0ff'; ctx.font = 'bold 11px "Trebuchet MS",sans-serif'; ctx.textAlign = 'center'; ctx.fillText('2P', tx, ty); ctx.textAlign = 'left';
     if (typeof ph === 'number') { ctx.fillStyle = 'rgba(0,0,0,.5)'; ctx.fillRect(tx - 14, ty + 4, 28, 3); ctx.fillStyle = '#7fe07f'; ctx.fillRect(tx - 14, ty + 4, 28 * Math.max(0, ph) / 100, 3); }
@@ -1334,7 +1356,7 @@ function frame(t) {
   update(dt); draw();
   if (coop && NET.connected() && NET.role() === 'host') {
     netSendT -= dt;
-    if (netSendT <= 0) { NET.send(buildSnapshot()); netSendT = 1 / 15; }   // host broadcasts the world ~15Hz
+    if (netSendT <= 0) { NET.send(buildSnapshot()); netSendT = 1 / 12; }   // host broadcasts the world ~12Hz
   }
   if ((state === 'win' || state === 'gameover') && !endShown) { endShown = true; showEndScreen(); }
   requestAnimationFrame(frame);
