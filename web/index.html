@@ -44,8 +44,8 @@
 
 <div id="titleScreen" class="overlay">
   <h1>🧟 ПАНК-МІСТО</h1>
-  <p>Місто захопили зомбі й банди грабіжників. Знайди <b>ключ</b>, визволи <b>жінку</b> із замкненого будинку
-     і приведи її <b>ДОДОМУ</b> цілою. А ще — здолай <b>боса</b>. Удачі, вижильцю!</p>
+  <p>Місто захопили зомбі й банди грабіжників. Знайди <b>ключ</b>, визволи <b>полоненого</b> із замкненого будинку
+     і приведи <b>ДОДОМУ</b> цілим. А ще — здолай <b>боса</b>. Удачі, вижильцю!</p>
   <div class="keys">
     <div class="key"><b>W A S D</b>рух</div>
     <div class="key"><b>Shift</b>біг</div>
@@ -55,6 +55,17 @@
     <div class="key"><b>Esc</b>пауза</div>
   </div>
   <p style="font-size:13px;opacity:.85">На телефоні: лівий джойстик — рух, кнопка «ВОГОНЬ» — стрілянина.</p>
+  <div id="heroPick" style="margin:14px 0 4px;">
+    <div style="font-size:14px;opacity:.85;margin-bottom:8px;">Обери персонажа (здібність — клавіша <b>Пробіл</b> / кнопка ★):</div>
+    <div style="display:flex;gap:12px;flex-wrap:wrap;justify-content:center;">
+      <button class="hero" data-hero="male" style="cursor:pointer;border-radius:14px;padding:12px 18px;border:2px solid transparent;background:rgba(255,255,255,.08);color:#fff;font-size:15px;font-family:inherit;text-align:left;max-width:240px;">
+        <b style="font-size:17px;">🧔 Чоловік</b><br><span style="opacity:.8;font-size:13px;">рятує жінку · здібність: <b>5с невразливості</b> 🛡</span>
+      </button>
+      <button class="hero" data-hero="female" style="cursor:pointer;border-radius:14px;padding:12px 18px;border:2px solid transparent;background:rgba(255,255,255,.08);color:#fff;font-size:15px;font-family:inherit;text-align:left;max-width:240px;">
+        <b style="font-size:17px;">👩 Жінка</b><br><span style="opacity:.8;font-size:13px;">рятує чоловіка · здібність: <b>сальто-таран</b> 🤸 (нищить усіх на шляху)</span>
+      </button>
+    </div>
+  </div>
   <button class="btn" id="startBtn">🔫 Грати соло</button>
   <div style="margin-top:14px; display:flex; gap:10px; flex-wrap:wrap; justify-content:center; align-items:center;">
     <button class="btn" id="hostBtn" style="font-size:16px; padding:10px 22px; background:linear-gradient(#9ad0ff,#6fb0e8); box-shadow:0 6px 0 #4a86c0;">🌐 Створити кооп</button>

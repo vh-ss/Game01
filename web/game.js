@@ -117,6 +117,23 @@ let dmgMul = 1, spdMul = 1, maxHealth = 100, dmgLvl = 0, spdLvl = 0, hpLvl = 0, 
 const DAYCYCLE = 140; let nightF = 0;   // 0 = day, 1 = deep night
 let eventT = 35 + Math.random() * 30, eventMsg = '', eventMsgT = 0, supplyMarker = null;
 let minimapOn = true;
+// ---- hero choice & special abilities ----
+let hero = 'male'; try { hero = localStorage.getItem('punk_hero') || 'male'; } catch (e) {}   // 'male' | 'female'
+let captiveMale = false;     // the rescued captive is a man (when the hero is the woman)
+let abilCD = 0, flipT = 0, invShield = 0; const flipDir = { x: 1, y: 0 };
+const ABIL_CD = 12, FLIP_DUR = 0.42, FLIP_SPEED = 880, MALE_INV = 5;
+const heroImg = () => hero === 'female' ? IMG.woman : IMG.player;
+function useAbility() {
+  if (state !== 'play' || abilCD > 0) return;
+  if (hero === 'female') {
+    flipT = FLIP_DUR; flipDir.x = face.x; flipDir.y = face.y; abilCD = ABIL_CD; invuln = Math.max(invuln, FLIP_DUR + 0.1);
+    shakeT = Math.max(shakeT, 0.12); AUDIO.sfx.melee(); showToast('🤸 Сальто!');
+    if (coop && NET.role() === 'client') NET.send({ t: 'abil', a: 'flip', dx: +face.x.toFixed(2), dy: +face.y.toFixed(2) });
+  } else {
+    invuln = Math.max(invuln, MALE_INV); invShield = MALE_INV; abilCD = ABIL_CD; AUDIO.sfx.pickup(); showToast('🛡 Невразливість 5с!');
+    if (coop && NET.role() === 'client') NET.send({ t: 'abil', a: 'shield' });
+  }
+}
 function announce(t) { eventMsg = t; eventMsgT = 3.5; shakeT = Math.max(shakeT, 0.15); AUDIO.sfx.hurt(); }
 function triggerEvent() {
   const px = player.x, py = player.y;
@@ -278,6 +295,7 @@ addEventListener('keydown', e => {
   if (e.code === 'Tab') minimapOn = !minimapOn;
   if (state === 'title' && (e.code === 'Space' || e.code === 'Enter')) startGame();
   else if ((state === 'win' || state === 'gameover') && e.code === 'KeyR') location.reload();
+  else if (e.code === 'Space' && state === 'play') useAbility();
   else if (e.code === 'KeyE' && state === 'play') { if (driving) exitCar(); else if (nearVehicle) enterCar(nearVehicle); }
   else if (e.code === 'KeyC' && state === 'play') buildBarricade();
   else if (e.code === 'KeyB' && state === 'play' && nearHome) { state = 'shop'; }
@@ -290,9 +308,16 @@ addEventListener('keydown', e => {
 addEventListener('keyup', e => { keys[e.code] = false; });
 const mouse = { x: VIEW_W / 2, y: VIEW_H / 2, down: false, moved: false };
 canvas.addEventListener('mousemove', e => { const r = canvas.getBoundingClientRect(); mouse.x = e.clientX - r.left; mouse.y = e.clientY - r.top; mouse.moved = true; });
-canvas.addEventListener('mousedown', () => { canvas.focus(); if (state === 'title') { startGame(); return; } if (state === 'shop') { for (let i = 0; i < SHOP.length; i++) { const r = shopRowRect(i); if (mouse.x >= r.x && mouse.x <= r.x + r.w && mouse.y >= r.y && mouse.y <= r.y + r.h) { buyItem(i); return; } } return; } if (state !== 'play') return; if (inQuestPanel(mouse.x, mouse.y)) { questsCollapsed = !questsCollapsed; return; } const wi = weaponSlotAt(mouse.x, mouse.y); if (wi >= 0) { if (owned[wi]) curW = wi; return; } mouse.down = true; });
+canvas.addEventListener('mousedown', () => { canvas.focus(); if (state === 'title') { startGame(); return; } if (state === 'shop') { for (let i = 0; i < SHOP.length; i++) { const r = shopRowRect(i); if (mouse.x >= r.x && mouse.x <= r.x + r.w && mouse.y >= r.y && mouse.y <= r.y + r.h) { buyItem(i); return; } } return; } if (state !== 'play') return; if (inAbil(mouse.x, mouse.y)) { useAbility(); return; } if (inQuestPanel(mouse.x, mouse.y)) { questsCollapsed = !questsCollapsed; return; } const wi = weaponSlotAt(mouse.x, mouse.y); if (wi >= 0) { if (owned[wi]) curW = wi; return; } mouse.down = true; });
 
-function startGame() { if (state !== 'title') return; state = 'play'; if ($title) $title.classList.add('hidden'); AUDIO.start(); tryFullscreen(); }
+// hero picker on the title screen
+{ const btns = document.querySelectorAll('#heroPick .hero');
+  const paint = () => btns.forEach(b => { const on = b.dataset.hero === hero; b.style.borderColor = on ? '#ffd23f' : 'transparent'; b.style.background = on ? 'rgba(255,210,63,.18)' : 'rgba(255,255,255,.08)'; });
+  btns.forEach(b => b.addEventListener('click', () => { hero = b.dataset.hero; try { localStorage.setItem('punk_hero', hero); } catch (e) {} paint(); }));
+  paint();
+}
+function updateRescueLabel() { const rq = quests.find(q => q.type === 'rescue'); if (rq) rq.label = captiveMale ? 'Врятувати чоловіка' : 'Врятувати жінку'; }
+function startGame() { if (state !== 'title') return; captiveMale = (hero === 'female'); updateRescueLabel(); state = 'play'; if ($title) $title.classList.add('hidden'); AUDIO.start(); tryFullscreen(); }
 function showEndScreen() {
   if (!$end) return;
   if (score > best) { best = score; try { localStorage.setItem('punktown_best', best); } catch (e) {} }
@@ -331,7 +356,7 @@ if (coop) {
   });
   NET.on('open', () => { setMP('✅ Напарник у грі!'); if (NET.role() === 'host') spawnPlayer2(); if (state === 'title') startGame(); });
   NET.on('close', () => { setMP('⚠ Напарник відключився'); remotePlayer = null; if (NET.role() === 'host') { player2 = null; remoteInput = null; } });
-  NET.on('data', d => { if (!d) return; if (d.t === 'in') remoteInput = d; else if (d.t === 'snap') { netSnap = d; netSnapNew = true; } else if (d.t === 'grab') hostGrab(d); });
+  NET.on('data', d => { if (!d) return; if (d.t === 'in') remoteInput = d; else if (d.t === 'snap') { netSnap = d; netSnapNew = true; } else if (d.t === 'grab') hostGrab(d); else if (d.t === 'abil') hostAbil(d); });
   if (coop.role === 'host') { NET.on('ready', () => setMP('Кімната: ' + coop.code + '  — дай цей код напарнику, тоді тисни «Грати»')); NET.host(coop.code); setMP('Створення кімнати…'); }
   else { player.x += 36; NET.join(coop.code); setMP('Приєднання до кімнати ' + coop.code + '…'); }   // offset so the two players don't spawn stacked
 }
@@ -358,7 +383,8 @@ function buildSnapshot() {
   }
   return {
     t: 'snap', nf: +nightF.toFixed(3),
-    p1: { x: Math.round(player.x), y: Math.round(player.y), fx: +face.x.toFixed(2), fy: +face.y.toFixed(2), fr: player.frame, h: Math.round(health), dr: driving ? 1 : 0, ca: driving ? +Math.atan2(face.y, face.x).toFixed(2) : 0, vx: Math.round(player.vx || 0), vy: Math.round(player.vy || 0) },
+    p1: { x: Math.round(player.x), y: Math.round(player.y), fx: +face.x.toFixed(2), fy: +face.y.toFixed(2), fr: player.frame, h: Math.round(health), dr: driving ? 1 : 0, ca: driving ? +Math.atan2(face.y, face.x).toFixed(2) : 0, vx: Math.round(player.vx || 0), vy: Math.round(player.vy || 0), hero: hero, shield: invShield > 0 ? 1 : 0 },
+    cm: captiveMale ? 1 : 0,
     mh: player2 ? Math.round(player2.health) : 100,
     cn: totalCoins, kl: kills, sc: score, di: district,
     fl: [hasKey ? 1 : 0, womanFreed ? 1 : 0, womanRescued ? 1 : 0, bossDead ? 1 : 0],
@@ -374,6 +400,12 @@ function buildSnapshot() {
     st: state,
   };
 }
+// host: client used a special ability
+function hostAbil(d) {
+  if (!player2) return;
+  if (d.a === 'flip') { player2.flipT = FLIP_DUR + 0.05; player2.invuln = Math.max(player2.invuln, FLIP_DUR + 0.1); }
+  else if (d.a === 'shield') { player2.invuln = Math.max(player2.invuln, MALE_INV); player2.shield = MALE_INV; }
+}
 // host: client (player2) grabbed a world item → remove the nearest matching one
 function hostGrab(d) {
   if (d.kind === 'loot') { let bi = -1, bd = 40 * 40; for (let i = 0; i < loot.length; i++) { const q = (loot[i].x - d.x) ** 2 + (loot[i].y - d.y) ** 2; if (q < bd) { bd = q; bi = i; } } if (bi >= 0) loot.splice(bi, 1); }
@@ -382,7 +414,9 @@ function hostGrab(d) {
 // ---- client: apply the host's snapshot into local state for rendering ----
 function applySnapshot(s) {
   nightF = s.nf;
-  remotePlayer = s.p1;   // has vx/vy for extrapolation between snapshots
+  remotePlayer = s.p1;   // has vx/vy for extrapolation between snapshots, hero, shield
+  if (remotePlayer) remotePlayer.shield = remotePlayer.shield ? 0.3 : 0;   // ring shown while host shield active
+  captiveMale = !!s.cm; updateRescueLabel();
   health = s.mh; totalCoins = s.cn; kills = s.kl; score = s.sc; district = s.di;
   hasKey = !!s.fl[0]; womanFreed = !!s.fl[1]; womanRescued = !!s.fl[2]; bossDead = !!s.fl[3];
   zombies.length = 0;
@@ -406,9 +440,10 @@ function updateP2(dt) {
   const ri = remoteInput;
   player2.invuln = Math.max(0, player2.invuln - dt);
   player2.flash = Math.max(0, player2.flash - dt);
+  player2.flipT = Math.max(0, (player2.flipT || 0) - dt); player2.shield = Math.max(0, (player2.shield || 0) - dt);
   if (player2.dead) { player2.respawnT -= dt; if (player2.respawnT <= 0) { player2.dead = false; player2.health = 100; const h = homes[0]; player2.x = h.x + 44; player2.y = h.y + 40; } return; }
   player2.x = ri.x; player2.y = ri.y; player2.face.x = ri.fx; player2.face.y = ri.fy; player2.frame = ri.fr;
-  player2.dr = ri.dr ? 1 : 0; player2.ca = ri.ca || 0;   // driving state (for partner-car render + run-over)
+  player2.dr = ri.dr ? 1 : 0; player2.ca = ri.ca || 0; player2.hero = ri.hero || 'male';   // driving state + hero sprite
   player2.fireCD = Math.max(0, player2.fireCD - dt);
   if (ri.fire && player2.fireCD <= 0) {
     const mx = player2.x + 9, my = player2.y + 11, ax = ri.ax || 1, ay = ri.ay || 0, base = Math.atan2(ay, ax);
@@ -459,8 +494,9 @@ function updateClient(dt) {
   const onSand = tileAt(player.x + player.w / 2, player.y + player.h / 2) === 3;
   const sp = (driving ? 245 : SPEED * spdMul * (running ? RUN_MULT : 1) * (onSand ? 0.5 : 1)) * dt;
   let mvx = ix, mvy = iy; if (mag > 1) { mvx = ix / mag; mvy = iy / mag; }
-  tryMove(player, mvx * sp, mvy * sp);
-  if (moving) { player.walkT += dt * (running ? 1.5 : 1); player.frame = 1 + (Math.floor(player.walkT * 9) % 2); } else player.frame = 0;
+  abilCD = Math.max(0, abilCD - dt); invShield = Math.max(0, invShield - dt); invuln = Math.max(0, invuln - dt);
+  if (flipT > 0) { tryMove(player, flipDir.x * FLIP_SPEED * dt, flipDir.y * FLIP_SPEED * dt); flipT -= dt; player.frame = 1; }
+  else { tryMove(player, mvx * sp, mvy * sp); if (moving) { player.walkT += dt * (running ? 1.5 : 1); player.frame = 1 + (Math.floor(player.walkT * 9) % 2); } else player.frame = 0; }
   stamina = clamp(stamina + (running ? -STAM_DRAIN : STAM_REGEN) * dt, 0, STAM_MAX);
   nearVehicle = null; if (!driving) { let bd = 46 * 46; for (const v of vehicles) { const d = (v.x - player.x - 9) ** 2 + (v.y - player.y - 11) ** 2; if (d < bd) { bd = d; nearVehicle = v; } } }
   clientPickups();
@@ -488,7 +524,7 @@ function updateClient(dt) {
     NET.send({ t: 'in', x: Math.round(player.x), y: Math.round(player.y), fx: +face.x.toFixed(2), fy: +face.y.toFixed(2), fr: player.frame,
       fire: sendFire, ax: +ax.toFixed(2), ay: +ay.toFixed(2),
       dmg: Math.round(w.dmg * dmgMul), rate: w.rate, spd: w.speed || 620, col: w.color, pel: w.pellets || 1, spr: w.spread || 0, melee: w.type === 'melee',
-      dr: driving ? 1 : 0, ca: driving ? +Math.atan2(face.y, face.x).toFixed(2) : 0 });
+      dr: driving ? 1 : 0, ca: driving ? +Math.atan2(face.y, face.x).toFixed(2) : 0, hero: hero });
   }
   cam.x = clamp(player.x + player.w / 2 - VIEW_W / 2, 0, LW - VIEW_W);
   cam.y = clamp(player.y + player.h / 2 - VIEW_H / 2, 0, LH - VIEW_H);
@@ -511,8 +547,10 @@ const btnPause = { y: 48, w: 40, h: 32, get x() { return VIEW_W - 50; } };
 const btnShop = { x: 10, y: 100, w: 120, h: 34 };   // appears near home on mobile
 const btnCar = { x: 10, y: 140, w: 130, h: 34 };    // appears near a car / when driving
 const btnBuild = { x: 10, y: 180, w: 130, h: 34 };  // build barricade (mobile)
+const abilBtn = { r: 36, get x() { return VIEW_W - 168; }, get y() { return VIEW_H - 96; } };   // special-ability button (left of fire)
 const inBtn = (b, x, y) => x >= b.x && x <= b.x + b.w && y >= b.y && y <= b.y + b.h;
 const inFire = (x, y) => Math.hypot(x - fireBtn.x, y - fireBtn.y) <= fireBtn.r + 12;
+const inAbil = (x, y) => Math.hypot(x - abilBtn.x, y - abilBtn.y) <= abilBtn.r + 10;
 // weapon selector bar (bottom-centre) — tap/click an icon to equip
 const WSLOT = 38, WGAP = 4, WBARW = WEAPONS.length * (WSLOT + WGAP) - WGAP;
 const weaponSlotRect = i => ({ x: (VIEW_W - WBARW) / 2 + i * (WSLOT + WGAP), y: VIEW_H - WSLOT - 6, w: WSLOT, h: WSLOT });
@@ -538,6 +576,7 @@ canvas.addEventListener('touchstart', e => {
     if (nearHome && inBtn(btnShop, x, y)) { state = 'shop'; continue; }
     if ((nearVehicle || driving) && inBtn(btnCar, x, y)) { if (driving) exitCar(); else enterCar(nearVehicle); continue; }
     if (!driving && inBtn(btnBuild, x, y)) { buildBarricade(); continue; }
+    if (inAbil(x, y)) { useAbility(); continue; }
     if (inQuestPanel(x, y)) { questsCollapsed = !questsCollapsed; continue; }
     { const wi = weaponSlotAt(x, y); if (wi >= 0) { if (owned[wi]) curW = wi; continue; } }
     if (inFire(x, y) && tFire.id === null) { tFire.id = t.identifier; tFire.active = true; }
@@ -671,9 +710,10 @@ function update(dt) {
   const onSand = tileAt(player.x + player.w / 2, player.y + player.h / 2) === 3;
   const sp = (driving ? 245 : SPEED * spdMul * (running ? RUN_MULT : 1) * (onSand ? 0.5 : 1)) * dt;
   let mvx = ix, mvy = iy; if (mag > 1) { mvx = ix / mag; mvy = iy / mag; }
-  tryMove(player, mvx * sp, mvy * sp);
-  player.vx = dt > 0 ? mvx * sp / dt : 0; player.vy = dt > 0 ? mvy * sp / dt : 0;   // px/s, for net smoothing
-  if (moving) { player.walkT += dt * (running ? 1.5 : 1); player.frame = 1 + (Math.floor(player.walkT * 9) % 2); } else { player.frame = 0; }
+  abilCD = Math.max(0, abilCD - dt); invShield = Math.max(0, invShield - dt);
+  if (flipT > 0) { tryMove(player, flipDir.x * FLIP_SPEED * dt, flipDir.y * FLIP_SPEED * dt); player.vx = flipDir.x * FLIP_SPEED; player.vy = flipDir.y * FLIP_SPEED; flipT -= dt; player.frame = 1; }
+  else { tryMove(player, mvx * sp, mvy * sp); player.vx = dt > 0 ? mvx * sp / dt : 0; player.vy = dt > 0 ? mvy * sp / dt : 0;   // px/s, for net smoothing
+    if (moving) { player.walkT += dt * (running ? 1.5 : 1); player.frame = 1 + (Math.floor(player.walkT * 9) % 2); } else { player.frame = 0; } }
   // nearest mountable vehicle
   nearVehicle = null; if (!driving) { let bd = 46 * 46; for (const v of vehicles) { const d = (v.x - player.x - 9) ** 2 + (v.y - player.y - 11) ** 2; if (d < bd) { bd = d; nearVehicle = v; } } }
   if (coop && NET.role() === 'host' && player2 && remoteInput) updateP2(dt);   // drive the client's character
@@ -757,7 +797,8 @@ function update(dt) {
       }
     }
     if (aabb(player.x, player.y, player.w, player.h, z.x, z.y, z.w, z.h)) {
-      if (driving) { if (!z.dead) { damageZombie(z, 999, Math.sign(z.x - player.x), Math.sign(z.y - player.y)); carHp -= z.ztype === 'tank' ? 8 : 2.5; if (carHp <= 0) { exitCar(); announce('🚗 Машина розбита!'); } } }
+      if (flipT > 0) { if (!z.dead) damageZombie(z, 999, flipDir.x, flipDir.y); }   // female flip-charge mows them down
+      else if (driving) { if (!z.dead) { damageZombie(z, 999, Math.sign(z.x - player.x), Math.sign(z.y - player.y)); carHp -= z.ztype === 'tank' ? 8 : 2.5; if (carHp <= 0) { exitCar(); announce('🚗 Машина розбита!'); } } }
       else if (z.crim) {
         if (z.stealCD <= 0 && z.fleeT <= 0) {
           let stole = false;
@@ -771,7 +812,7 @@ function update(dt) {
       } else hurt(z.ztype === 'tank' ? 26 : 16);
     }
     if (player2 && player2.active && !player2.dead && !z.dead && aabb(player2.x, player2.y, player2.w, player2.h, z.x, z.y, z.w, z.h)) {
-      if (player2.dr) damageZombie(z, 999, Math.sign(z.x - player2.x), Math.sign(z.y - player2.y));   // run over while driving
+      if (player2.dr || player2.flipT > 0) damageZombie(z, 999, Math.sign(z.x - player2.x), Math.sign(z.y - player2.y));   // run over while driving / flip-charge
       else if (player2.invuln <= 0) {
         player2.health -= z.ztype === 'tank' ? 22 : 14; player2.invuln = 0.5; player2.flash = 0.14; spawnBurst(player2.x + 9, player2.y + 11, '#9fd0ff', 5, 80, 2);
         if (player2.health <= 0) { player2.dead = true; player2.respawnT = 2.5; spawnBurst(player2.x + 9, player2.y + 11, '#ff5a4a', 14, 130, 3); }
@@ -1022,7 +1063,7 @@ function draw() {
   }
   // the woman
   if (woman && woman.active && !womanRescued) {
-    spr(IMG.woman[woman.frame], woman.x - 3, woman.y - 8);
+    spr((captiveMale ? IMG.player : IMG.woman)[woman.frame], woman.x - 3, woman.y - 8);
     if (woman.weapon != null) { const wcx = woman.x + woman.w / 2 - cam.x, wcy = woman.y + woman.h / 2 - cam.y; ctx.save(); ctx.translate(Math.round(wcx), Math.round(wcy)); ctx.rotate(Math.atan2(woman.aimy, woman.aimx)); ctx.fillStyle = '#333'; ctx.fillRect(3, -1.5, 11, 3); ctx.fillStyle = WEAPONS[woman.weapon].color; ctx.fillRect(12, -1, 3, 2); ctx.restore(); }
     if (woman.flash > 0) { ctx.globalAlpha = woman.flash / 0.14 * 0.7; ctx.fillStyle = '#fff'; ctx.fillRect(Math.round(woman.x - 3 - cam.x), Math.round(woman.y - 8 - cam.y), 24, 32); ctx.globalAlpha = 1; }
     const hx = Math.round(woman.x - cam.x), hy = Math.round(woman.y - 12 - cam.y);
@@ -1077,7 +1118,15 @@ function draw() {
     drawCar(player.x + 9, player.y + 11, Math.atan2(face.y, face.x), '#9a3030', 1.2);
     const hx = Math.round(player.x + 9 - 22 - cam.x), hy = Math.round(player.y - 22 - cam.y);
     ctx.fillStyle = 'rgba(0,0,0,.55)'; ctx.fillRect(hx, hy, 44, 4); ctx.fillStyle = carHp > 30 ? '#9fd0e8' : '#ff6f6f'; ctx.fillRect(hx, hy, 44 * Math.max(0, carHp) / 100, 4);
-  } else if (!(invuln > 0 && Math.floor(invuln * 20) % 2 === 0)) spr(IMG.player[player.frame], player.x - 3, player.y - 8);
+  } else {
+    const pcx = player.x + 9 - cam.x, pcy = player.y + 3 - cam.y;
+    if (invShield > 0) { ctx.save(); ctx.globalAlpha = 0.35 + 0.2 * Math.sin(animClock * 8); ctx.strokeStyle = '#6fd0ff'; ctx.lineWidth = 3; ctx.beginPath(); ctx.arc(pcx, pcy + 5, 19, 0, 7); ctx.stroke(); ctx.restore(); }
+    const blink = invuln > 0 && invShield <= 0 && flipT <= 0 && Math.floor(invuln * 20) % 2 === 0;
+    if (flipT > 0) {
+      ctx.save(); ctx.globalAlpha = 0.45; ctx.strokeStyle = '#ffe08a'; ctx.lineWidth = 4; ctx.lineCap = 'round'; ctx.beginPath(); ctx.moveTo(pcx - flipDir.x * 26, pcy + 6 - flipDir.y * 26); ctx.lineTo(pcx, pcy + 6); ctx.stroke(); ctx.restore();
+      ctx.save(); ctx.translate(pcx, pcy + 6); ctx.rotate((1 - flipT / FLIP_DUR) * Math.PI * 2 * (flipDir.x < 0 ? -1 : 1)); ctx.drawImage(heroImg()[1], -13, -18); ctx.restore();
+    } else if (!blink) spr(heroImg()[player.frame], player.x - 3, player.y - 8);
+  }
   // held weapon (gun barrel / bat + swing / flame nozzle)
   {
     const pcx = player.x + player.w / 2 - cam.x, pcy = player.y + player.h / 2 - cam.y;
@@ -1101,8 +1150,9 @@ function draw() {
   if (partner) {
     const pf = (partner.fr != null ? partner.fr : partner.frame) | 0;
     const ph = partner.h != null ? partner.h : partner.health;
+    if ((partner.shield || 0) > 0) { const pcx = partner.x + 9 - cam.x, pcy = partner.y + 8 - cam.y; ctx.save(); ctx.globalAlpha = 0.4; ctx.strokeStyle = '#6fd0ff'; ctx.lineWidth = 3; ctx.beginPath(); ctx.arc(pcx, pcy, 19, 0, 7); ctx.stroke(); ctx.restore(); }
     if (partner.dr) drawCar(partner.x + 9, partner.y + 11, partner.ca || 0, '#3a6ea5', 1.2);   // partner is driving
-    else spr(IMG.player[pf || 0], partner.x - 3, partner.y - 8);
+    else spr((partner.hero === 'female' ? IMG.woman : IMG.player)[pf || 0], partner.x - 3, partner.y - 8);
     const tx = Math.round(partner.x + 9 - cam.x), ty = Math.round(partner.y - 16 - cam.y);
     ctx.fillStyle = '#9fd0ff'; ctx.font = 'bold 11px "Trebuchet MS",sans-serif'; ctx.textAlign = 'center'; ctx.fillText('2P', tx, ty); ctx.textAlign = 'left';
     if (typeof ph === 'number') { ctx.fillStyle = 'rgba(0,0,0,.5)'; ctx.fillRect(tx - 14, ty + 4, 28, 3); ctx.fillStyle = '#7fe07f'; ctx.fillRect(tx - 14, ty + 4, 28 * Math.max(0, ph) / 100, 3); }
@@ -1126,6 +1176,7 @@ function draw() {
   if (state === 'play' && IS_TOUCH && !driving) drawBuildPrompt();
   if (state === 'shop') drawShop();
   if (IS_TOUCH && (state === 'play' || state === 'paused')) drawTouchUI();
+  if (state === 'play' || state === 'paused') drawAbility();
   if (state === 'paused') drawPause();
   // win / gameover are shown via the HTML #endScreen overlay (drawn over the frozen frame)
 }
@@ -1171,6 +1222,18 @@ function drawTouchUI() {
   ctx.restore();
 }
 function rr(x, y, w, h, r) { ctx.beginPath(); ctx.moveTo(x + r, y); ctx.arcTo(x + w, y, x + w, y + h, r); ctx.arcTo(x + w, y + h, x, y + h, r); ctx.arcTo(x, y + h, x, y, r); ctx.arcTo(x, y, x + w, y, r); ctx.closePath(); }
+function drawAbility() {
+  const ready = abilCD <= 0, fem = hero === 'female';
+  ctx.save();
+  ctx.beginPath(); ctx.arc(abilBtn.x, abilBtn.y, abilBtn.r, 0, 7);
+  ctx.fillStyle = ready ? (fem ? 'rgba(255,110,190,0.5)' : 'rgba(110,200,255,0.5)') : 'rgba(70,72,82,0.5)'; ctx.fill();
+  ctx.strokeStyle = ready ? '#fff' : 'rgba(255,255,255,0.4)'; ctx.lineWidth = 3; ctx.stroke();
+  ctx.fillStyle = '#fff'; ctx.font = '24px Calibri'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+  ctx.fillText(fem ? '🤸' : '🛡', abilBtn.x, abilBtn.y);
+  if (!ready) { ctx.strokeStyle = 'rgba(255,255,255,0.9)'; ctx.lineWidth = 4; ctx.beginPath(); ctx.arc(abilBtn.x, abilBtn.y, abilBtn.r - 1, -Math.PI / 2, -Math.PI / 2 + (1 - abilCD / ABIL_CD) * Math.PI * 2); ctx.stroke(); }
+  else if (!IS_TOUCH) { ctx.fillStyle = 'rgba(255,255,255,0.85)'; ctx.font = '10px Calibri'; ctx.fillText('Пробіл', abilBtn.x, abilBtn.y + abilBtn.r + 9); }
+  ctx.textBaseline = 'alphabetic'; ctx.textAlign = 'left'; ctx.restore();
+}
 
 function drawPointer(wx, wy, label, color) {
   const sx = wx - cam.x, sy = wy - cam.y; const pulse = 0.5 + 0.5 * Math.sin(animClock * 4);
@@ -1304,7 +1367,7 @@ function drawSpeech() {
   ctx.fillStyle = 'rgba(14,28,20,.92)'; rr(x, y, w, h, 14); ctx.fill();
   ctx.strokeStyle = 'rgba(224,81,143,.7)'; ctx.lineWidth = 2; rr(x, y, w, h, 14); ctx.stroke();
   // little woman portrait
-  ctx.save(); ctx.translate(x + 34, y + 46); ctx.scale(1.2, 1.2); ctx.drawImage(IMG.woman[0], -12, -22); ctx.restore();
+  ctx.save(); ctx.translate(x + 34, y + 46); ctx.scale(1.2, 1.2); ctx.drawImage((captiveMale ? IMG.player : IMG.woman)[0], -12, -22); ctx.restore();
   ctx.fillStyle = '#ff9aa2'; ctx.font = 'bold 15px Trebuchet MS,sans-serif'; ctx.textAlign = 'left'; ctx.textBaseline = 'alphabetic';
   ctx.fillText('Жінка', x + 64, y + 24);
   ctx.fillStyle = '#f0f6f1'; ctx.font = '15px Trebuchet MS,sans-serif';
