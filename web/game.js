@@ -135,6 +135,47 @@ function useAbility() {
   }
 }
 function announce(t) { eventMsg = t; eventMsgT = 3.5; shakeT = Math.max(shakeT, 0.15); AUDIO.sfx.hurt(); }
+// ---- towns, NPCs & side-quests ----
+const towns = LEVEL.towns || [];
+const npcs = [];
+for (const tn of towns) {
+  npcs.push({ x: tn.shop[0], y: tn.shop[1], bx: tn.shop[0], by: tn.shop[1], w: 18, h: 22, kind: 'shop', town: tn, frame: 0, walkT: 0, wanderT: 0, vx: 0, vy: 0 });
+  npcs.push({ x: tn.quest[0], y: tn.quest[1], bx: tn.quest[0], by: tn.quest[1], w: 18, h: 22, kind: 'quest', town: tn, frame: 0, walkT: 0, wanderT: 0, vx: 0, vy: 0, gave: false });
+  (tn.villagers || []).forEach((v, i) => npcs.push({ x: v[0], y: v[1], bx: v[0], by: v[1], w: 18, h: 22, kind: 'villager', town: tn, fem: i % 2 === 0, frame: 0, walkT: 0, wanderT: i * 0.5, vx: 0, vy: 0 }));
+}
+let nearShopTown = null, nearQuestNPC = null, sideQuest = null, sideDone = 0;
+function offerQuest(npc) {
+  if (sideQuest || npc.gave) return;
+  if (Math.random() < 0.5) sideQuest = { kind: 'hunt', need: 6 + Math.floor(Math.random() * 7), reward: 10 + Math.floor(Math.random() * 10), base: kills, town: npc.town, npc };
+  else sideQuest = { kind: 'collect', need: 10 + Math.floor(Math.random() * 12), reward: 8 + Math.floor(Math.random() * 8), base: coinsTotal, town: npc.town, npc };
+  npc.gave = true; showToast('📜 ' + npc.town.name + ' дає завдання!'); AUDIO.sfx.pickup();
+}
+function sideProgress() { return !sideQuest ? 0 : Math.max(0, (sideQuest.kind === 'hunt' ? kills : coinsTotal) - sideQuest.base); }
+function sideQuestText() { if (!sideQuest) return ''; const p = Math.min(sideProgress(), sideQuest.need); return (sideQuest.kind === 'hunt' ? '☠ Зомбі ' : '💰 Монети ') + p + '/' + sideQuest.need + '  →  +' + sideQuest.reward + '💰'; }
+function checkSideQuest() {
+  if (sideQuest && sideProgress() >= sideQuest.need) {
+    totalCoins += sideQuest.reward; coinsTotal += sideQuest.reward; score += sideQuest.reward * 5;
+    if (sideQuest.npc) sideQuest.npc.gave = false; sideDone++;
+    showToast('✅ Завдання виконано! +' + sideQuest.reward + '💰'); AUDIO.sfx.win(); sideQuest = null;
+  }
+}
+function updateNPCs(dt) {
+  nearShopTown = null; nearQuestNPC = null;
+  const pcx = player.x + 9, pcy = player.y + 11;
+  for (const n of npcs) {
+    if (n.kind === 'villager') {
+      n.wanderT -= dt;
+      if (n.wanderT <= 0) { if (Math.random() < 0.4) { n.vx = n.vy = 0; } else { const a = Math.random() * 6.283; n.vx = Math.cos(a) * 13; n.vy = Math.sin(a) * 13; } n.wanderT = 1.4 + Math.random() * 2.4; }
+      const nx = n.x + n.vx * dt, ny = n.y + n.vy * dt;
+      if (Math.hypot(nx - n.bx, ny - n.by) > 26 || boxSolid(nx, ny, n.w, n.h)) { n.vx = -n.vx; n.vy = -n.vy; } else { n.x = nx; n.y = ny; }
+      n.walkT += dt; n.frame = Math.hypot(n.vx, n.vy) > 1 ? 1 + (Math.floor(n.walkT * 6) % 2) : 0;
+    }
+    const d = Math.hypot(pcx - (n.x + 9), pcy - (n.y + 11));
+    if (n.kind === 'shop' && d < 46) nearShopTown = n.town;
+    if (n.kind === 'quest' && d < 46) { nearQuestNPC = n; if (!sideQuest) offerQuest(n); }
+  }
+  checkSideQuest();
+}
 function triggerEvent() {
   const px = player.x, py = player.y;
   const near = reachCells.filter(([c, r]) => { const d = Math.hypot(c * TS - px, r * TS - py); return d > 340 && d < 700; });
@@ -298,7 +339,7 @@ addEventListener('keydown', e => {
   else if (e.code === 'Space' && state === 'play') useAbility();
   else if (e.code === 'KeyE' && state === 'play') { if (driving) exitCar(); else if (nearVehicle) enterCar(nearVehicle); }
   else if (e.code === 'KeyC' && state === 'play') buildBarricade();
-  else if (e.code === 'KeyB' && state === 'play' && nearHome) { state = 'shop'; }
+  else if (e.code === 'KeyB' && state === 'play' && (nearHome || nearShopTown)) { state = 'shop'; }
   else if ((e.code === 'KeyB' || e.code === 'Escape') && state === 'shop') { state = 'play'; }
   else if (e.code === 'Escape' && state === 'play') { state = 'paused'; AUDIO.stopMusic(); }
   else if (e.code === 'Escape' && state === 'paused') { state = 'play'; AUDIO.startMusic(); }
@@ -386,7 +427,7 @@ function buildSnapshot() {
     p1: { x: Math.round(player.x), y: Math.round(player.y), fx: +face.x.toFixed(2), fy: +face.y.toFixed(2), fr: player.frame, h: Math.round(health), dr: driving ? 1 : 0, ca: driving ? +Math.atan2(face.y, face.x).toFixed(2) : 0, vx: Math.round(player.vx || 0), vy: Math.round(player.vy || 0), hero: hero, shield: invShield > 0 ? 1 : 0 },
     cm: captiveMale ? 1 : 0,
     mh: player2 ? Math.round(player2.health) : 100,
-    cn: totalCoins, kl: kills, sc: score, di: district,
+    cn: totalCoins, ct: coinsTotal, kl: kills, sc: score, di: district,
     fl: [hasKey ? 1 : 0, womanFreed ? 1 : 0, womanRescued ? 1 : 0, bossDead ? 1 : 0],
     bn: boss && !bossDead ? boss.name : '',
     z,
@@ -417,7 +458,7 @@ function applySnapshot(s) {
   remotePlayer = s.p1;   // has vx/vy for extrapolation between snapshots, hero, shield
   if (remotePlayer) remotePlayer.shield = remotePlayer.shield ? 0.3 : 0;   // ring shown while host shield active
   captiveMale = !!s.cm; updateRescueLabel();
-  health = s.mh; totalCoins = s.cn; kills = s.kl; score = s.sc; district = s.di;
+  health = s.mh; totalCoins = s.cn; if (s.ct != null) coinsTotal = s.ct; kills = s.kl; score = s.sc; district = s.di;
   hasKey = !!s.fl[0]; womanFreed = !!s.fl[1]; womanRescued = !!s.fl[2]; bossDead = !!s.fl[3];
   zombies.length = 0;
   for (const a of s.z) zombies.push({
@@ -500,6 +541,7 @@ function updateClient(dt) {
   stamina = clamp(stamina + (running ? -STAM_DRAIN : STAM_REGEN) * dt, 0, STAM_MAX);
   nearVehicle = null; if (!driving) { let bd = 46 * 46; for (const v of vehicles) { const d = (v.x - player.x - 9) ** 2 + (v.y - player.y - 11) ** 2; if (d < bd) { bd = d; nearVehicle = v; } } }
   clientPickups();
+  updateNPCs(dt);
 
   // weapon select (owned only) + auto-reload from a spare magazine
   for (let i = 0; i < WEAPONS.length; i++) if (keys['Digit' + (i + 1)] && owned[i]) curW = i;
@@ -573,7 +615,7 @@ canvas.addEventListener('touchstart', e => {
     if (state === 'shop') { let hit = false; for (let i = 0; i < SHOP.length; i++) { const r = shopRowRect(i); if (x >= r.x && x <= r.x + r.w && y >= r.y && y <= r.y + r.h) { buyItem(i); hit = true; break; } } if (!hit) state = 'play'; continue; }
     if (inBtn(btnPause, x, y)) { if (state === 'play') { state = 'paused'; AUDIO.stopMusic(); } else if (state === 'paused') { state = 'play'; AUDIO.startMusic(); } continue; }
     if (state !== 'play') continue;
-    if (nearHome && inBtn(btnShop, x, y)) { state = 'shop'; continue; }
+    if ((nearHome || nearShopTown) && inBtn(btnShop, x, y)) { state = 'shop'; continue; }
     if ((nearVehicle || driving) && inBtn(btnCar, x, y)) { if (driving) exitCar(); else enterCar(nearVehicle); continue; }
     if (!driving && inBtn(btnBuild, x, y)) { buildBarricade(); continue; }
     if (inAbil(x, y)) { useAbility(); continue; }
@@ -912,7 +954,7 @@ function update(dt) {
   hurtFlash = Math.max(0, hurtFlash - dt * 1.5); shakeT = Math.max(0, shakeT - dt); invuln = Math.max(0, invuln - dt); toastT = Math.max(0, toastT - dt); swingFx = Math.max(0, swingFx - dt); speechT = Math.max(0, speechT - dt);
   comboT = Math.max(0, comboT - dt); if (comboT <= 0) combo = 0;
   for (let i = particles.length - 1; i >= 0; i--) { const p = particles[i]; p.vy += (p.grav || 0) * dt; p.x += p.vx * dt; p.y += p.vy * dt; p.life -= dt; if (p.life <= 0) particles.splice(i, 1); }
-  updateBurn(dt); updateAllies(dt); updateBarricades(dt);
+  updateBurn(dt); updateAllies(dt); updateBarricades(dt); updateNPCs(dt);
 
   checkQuests();
 
@@ -1072,6 +1114,7 @@ function draw() {
     if (woman.weapon != null) { ctx.fillStyle = woman.ammo > 0 ? '#ffd23f' : '#ff6a6a'; ctx.font = 'bold 8px Calibri'; ctx.fillText('⦿' + woman.ammo, woman.x + 9 - cam.x, hy - 13); }
     ctx.textAlign = 'left';
   }
+  drawNPCs();
   // squad survivors
   for (const a of allies) {
     spr(IMG.player[a.frame], a.x - 3, a.y - 8);
@@ -1170,8 +1213,8 @@ function draw() {
   else if (womanFreed && !womanRescued) drawPointer(homes[0].x + 48, homes[0].y, 'ДОДОМУ', '#3fbf60');
   if (boss && !bossDead) drawPointer(boss.x + 15, boss.y, 'БОС', '#ff5a4a');
   if (supplyMarker) drawPointer(supplyMarker.x, supplyMarker.y, '📦', '#ffe08a');
-  drawHUD(); drawQuests(); drawWeaponBar(); drawSpeech(); drawMinimap();
-  if (state === 'play' && nearHome) drawShopPrompt();
+  drawHUD(); drawQuests(); drawSideQuest(); drawWeaponBar(); drawSpeech(); drawMinimap();
+  if (state === 'play' && (nearHome || nearShopTown)) drawShopPrompt();
   if (state === 'play' && (nearVehicle || driving)) drawCarPrompt();
   if (state === 'play' && IS_TOUCH && !driving) drawBuildPrompt();
   if (state === 'shop') drawShop();
@@ -1345,6 +1388,35 @@ function drawHomeIndicator() {
   ctx.restore();
 }
 
+function drawNPCs() {
+  for (const tn of towns) {
+    const lx = Math.round(tn.x + 9 - cam.x), ly = Math.round(tn.y - 132 - cam.y);
+    if (lx < -120 || lx > VIEW_W + 120 || ly < -30 || ly > VIEW_H + 30) continue;
+    ctx.font = 'bold 14px "Trebuchet MS",sans-serif'; ctx.textAlign = 'center';
+    const w = ctx.measureText('🏙 ' + tn.name).width + 16;
+    ctx.fillStyle = 'rgba(20,24,16,.55)'; rr(lx - w / 2, ly - 14, w, 20, 7); ctx.fill();
+    ctx.fillStyle = '#ffe8a0'; ctx.textBaseline = 'middle'; ctx.fillText('🏙 ' + tn.name, lx, ly - 4); ctx.textBaseline = 'alphabetic'; ctx.textAlign = 'left';
+  }
+  for (const n of npcs) {
+    if (n.x - cam.x < -40 || n.x - cam.x > VIEW_W + 40 || n.y - cam.y < -50 || n.y - cam.y > VIEW_H + 40) continue;
+    spr((n.kind === 'quest' || n.fem ? IMG.woman : IMG.player)[n.frame || 0], n.x - 3, n.y - 8);
+    const ax = Math.round(n.x + 9 - cam.x), ay = Math.round(n.y - 14 - cam.y);
+    ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+    if (n.kind === 'shop') { ctx.fillStyle = 'rgba(0,0,0,.4)'; ctx.beginPath(); ctx.arc(ax, ay, 9, 0, 7); ctx.fill(); ctx.font = '14px Calibri'; ctx.fillStyle = '#fff'; ctx.fillText('🛒', ax, ay + 1); }
+    else if (n.kind === 'quest') { ctx.fillStyle = 'rgba(0,0,0,.4)'; ctx.beginPath(); ctx.arc(ax, ay, 9, 0, 7); ctx.fill(); ctx.font = 'bold 15px Calibri'; ctx.fillStyle = sideQuest && sideQuest.npc === n ? '#9fe0ff' : '#ffd23f'; ctx.fillText(sideQuest && sideQuest.npc === n ? '…' : '!', ax, ay + 1); }
+    else { ctx.fillStyle = '#bfe0ff'; ctx.beginPath(); ctx.arc(ax, ay + 2, 2.4, 0, 7); ctx.fill(); }
+    ctx.textAlign = 'left'; ctx.textBaseline = 'alphabetic';
+  }
+}
+function drawSideQuest() {
+  if (!sideQuest) return;
+  const txt = '📜 ' + sideQuest.town.name + ' · ' + sideQuestText();
+  ctx.font = 'bold 13px "Trebuchet MS",sans-serif'; const w = ctx.measureText(txt).width + 22;
+  const x = (VIEW_W - w) / 2, y = 86;
+  ctx.fillStyle = 'rgba(30,28,16,.82)'; rr(x, y, w, 24, 8); ctx.fill();
+  ctx.strokeStyle = '#ffd23f'; ctx.lineWidth = 1.5; rr(x, y, w, 24, 8); ctx.stroke();
+  ctx.fillStyle = '#ffe8a0'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle'; ctx.fillText(txt, VIEW_W / 2, y + 12); ctx.textAlign = 'left'; ctx.textBaseline = 'alphabetic';
+}
 function drawMinimap() {
   if (!minimapOn) return;
   const mw = 150, mh = Math.round(mw * LH / LW), mx = VIEW_W - 10 - mw, my = 86;
@@ -1358,6 +1430,7 @@ function drawMinimap() {
   if (lockedHouse && !womanFreed) dot(lockedHouse.x + 48, lockedHouse.y + 48, '#9fd0e8', 3);
   if (woman && woman.active && !womanRescued) dot(woman.x, woman.y, '#ff9aa2', 2.5);
   if (supplyMarker) dot(supplyMarker.x, supplyMarker.y, '#ffe08a', 2.5);
+  for (const tn of towns) { ctx.fillStyle = '#7fd0ff'; ctx.fillRect(mx + tn.x * sx - 2.5, my + tn.y * sy - 2.5, 5, 5); }   // towns
   ctx.fillStyle = '#fff'; ctx.beginPath(); ctx.arc(mx + (player.x + 9) * sx, my + (player.y + 11) * sy, 3, 0, 7); ctx.fill();
 }
 function drawSpeech() {
@@ -1369,7 +1442,7 @@ function drawSpeech() {
   // little woman portrait
   ctx.save(); ctx.translate(x + 34, y + 46); ctx.scale(1.2, 1.2); ctx.drawImage((captiveMale ? IMG.player : IMG.woman)[0], -12, -22); ctx.restore();
   ctx.fillStyle = '#ff9aa2'; ctx.font = 'bold 15px Trebuchet MS,sans-serif'; ctx.textAlign = 'left'; ctx.textBaseline = 'alphabetic';
-  ctx.fillText('Жінка', x + 64, y + 24);
+  ctx.fillText(captiveMale ? 'Полонений' : 'Жінка', x + 64, y + 24);
   ctx.fillStyle = '#f0f6f1'; ctx.font = '15px Trebuchet MS,sans-serif';
   ctx.fillText(speech, x + 64, y + 48);
   ctx.globalAlpha = 1;
