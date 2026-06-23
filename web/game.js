@@ -122,7 +122,35 @@ let hero = 'male'; try { hero = localStorage.getItem('punk_hero') || 'male'; } c
 let captiveMale = false;     // the rescued captive is a man (when the hero is the woman)
 let abilCD = 0, flipT = 0, invShield = 0; const flipDir = { x: 1, y: 0 };
 const ABIL_CD = 12, FLIP_DUR = 0.42, FLIP_SPEED = 880, MALE_INV = 5;
-const heroImg = () => hero === 'female' ? IMG.woman : IMG.player;
+// ---- costumes (skins): recolour the hero sprite ----
+const SKINS = [
+  { name: 'Класика', cost: 0, tint: null, a: 0 },
+  { name: 'Багряний', cost: 12, tint: '#c0392b', a: 0.5 },
+  { name: 'Лазурний', cost: 12, tint: '#2d6cdf', a: 0.5 },
+  { name: 'Смарагд', cost: 16, tint: '#2e9e5b', a: 0.5 },
+  { name: 'Золото', cost: 30, tint: '#e8b020', a: 0.55 },
+  { name: 'Тінь', cost: 22, tint: '#1b1b26', a: 0.62 },
+  { name: 'Неон', cost: 26, tint: '#d63ccb', a: 0.5 },
+];
+function tintFrames(base, tint, a) {
+  if (!tint) return base;
+  return base.map(f => { const c = document.createElement('canvas'); c.width = f.width; c.height = f.height; const x = c.getContext('2d'); x.drawImage(f, 0, 0); x.globalCompositeOperation = 'source-atop'; x.globalAlpha = a; x.fillStyle = tint; x.fillRect(0, 0, c.width, c.height); return c; });
+}
+const skinPlayer = SKINS.map(s => tintFrames(IMG.player, s.tint, s.a));
+const skinWoman = SKINS.map(s => tintFrames(IMG.woman, s.tint, s.a));
+const skinSet = (h, idx) => (h === 'female' ? skinWoman : skinPlayer)[idx] || (h === 'female' ? IMG.woman : IMG.player);
+let ownedSkins, curSkin;
+try { ownedSkins = new Set(JSON.parse(localStorage.getItem('punk_skins') || '[0]')); } catch (e) { ownedSkins = new Set([0]); }
+try { curSkin = +(localStorage.getItem('punk_skin') || 0) || 0; } catch (e) { curSkin = 0; }
+if (!ownedSkins.has(curSkin)) curSkin = 0;
+function saveSkins() { try { localStorage.setItem('punk_skins', JSON.stringify([...ownedSkins])); localStorage.setItem('punk_skin', curSkin); } catch (e) {} }
+function buyOrEquipSkin(i) {
+  const s = SKINS[i]; if (!s) return;
+  if (ownedSkins.has(i)) { curSkin = i; saveSkins(); AUDIO.sfx.pickup(); showToast('Вдягнено: ' + s.name); }
+  else if (totalCoins >= s.cost) { totalCoins -= s.cost; ownedSkins.add(i); curSkin = i; saveSkins(); AUDIO.sfx.win(); showToast('Куплено костюм: ' + s.name); }
+  else { AUDIO.sfx.hurt(); showToast('Замало монет (' + s.cost + ')'); }
+}
+const heroImg = () => skinSet(hero, curSkin);
 function useAbility() {
   if (state !== 'play' || abilCD > 0) return;
   if (hero === 'female') {
@@ -341,6 +369,7 @@ addEventListener('keydown', e => {
   else if (e.code === 'KeyC' && state === 'play') buildBarricade();
   else if (e.code === 'KeyB' && state === 'play' && (nearHome || nearShopTown)) { state = 'shop'; }
   else if ((e.code === 'KeyB' || e.code === 'Escape') && state === 'shop') { state = 'play'; }
+  else if ((e.code === 'KeyB' || e.code === 'Escape') && state === 'skins') { state = 'shop'; }
   else if (e.code === 'Escape' && state === 'play') { state = 'paused'; AUDIO.stopMusic(); }
   else if (e.code === 'Escape' && state === 'paused') { state = 'play'; AUDIO.startMusic(); }
   else if (state === 'shop' && /^Digit[1-6]$/.test(e.code)) buyItem(+e.code.slice(5) - 1);
@@ -349,7 +378,7 @@ addEventListener('keydown', e => {
 addEventListener('keyup', e => { keys[e.code] = false; });
 const mouse = { x: VIEW_W / 2, y: VIEW_H / 2, down: false, moved: false };
 canvas.addEventListener('mousemove', e => { const r = canvas.getBoundingClientRect(); mouse.x = e.clientX - r.left; mouse.y = e.clientY - r.top; mouse.moved = true; });
-canvas.addEventListener('mousedown', () => { canvas.focus(); if (state === 'title') { startGame(); return; } if (state === 'shop') { for (let i = 0; i < SHOP.length; i++) { const r = shopRowRect(i); if (mouse.x >= r.x && mouse.x <= r.x + r.w && mouse.y >= r.y && mouse.y <= r.y + r.h) { buyItem(i); return; } } return; } if (state !== 'play') return; if (inAbil(mouse.x, mouse.y)) { useAbility(); return; } if (inQuestPanel(mouse.x, mouse.y)) { questsCollapsed = !questsCollapsed; return; } const wi = weaponSlotAt(mouse.x, mouse.y); if (wi >= 0) { if (owned[wi]) curW = wi; return; } mouse.down = true; });
+canvas.addEventListener('mousedown', () => { canvas.focus(); if (state === 'title') { startGame(); return; } if (state === 'shop') { for (let i = 0; i < SHOP.length; i++) { const r = shopRowRect(i); if (mouse.x >= r.x && mouse.x <= r.x + r.w && mouse.y >= r.y && mouse.y <= r.y + r.h) { buyItem(i); return; } } const sb = skinsBtnRect(); if (mouse.x >= sb.x && mouse.x <= sb.x + sb.w && mouse.y >= sb.y && mouse.y <= sb.y + sb.h) state = 'skins'; return; } if (state === 'skins') { for (let i = 0; i < SKINS.length; i++) { const r = skinRect(i); if (mouse.x >= r.x && mouse.x <= r.x + r.w && mouse.y >= r.y && mouse.y <= r.y + r.h) { buyOrEquipSkin(i); return; } } state = 'shop'; return; } if (state !== 'play') return; if (inAbil(mouse.x, mouse.y)) { useAbility(); return; } if (inQuestPanel(mouse.x, mouse.y)) { questsCollapsed = !questsCollapsed; return; } const wi = weaponSlotAt(mouse.x, mouse.y); if (wi >= 0) { if (owned[wi]) curW = wi; return; } mouse.down = true; });
 
 // hero picker on the title screen
 { const btns = document.querySelectorAll('#heroPick .hero');
@@ -424,7 +453,7 @@ function buildSnapshot() {
   }
   return {
     t: 'snap', nf: +nightF.toFixed(3),
-    p1: { x: Math.round(player.x), y: Math.round(player.y), fx: +face.x.toFixed(2), fy: +face.y.toFixed(2), fr: player.frame, h: Math.round(health), dr: driving ? 1 : 0, ca: driving ? +Math.atan2(face.y, face.x).toFixed(2) : 0, vx: Math.round(player.vx || 0), vy: Math.round(player.vy || 0), hero: hero, shield: invShield > 0 ? 1 : 0 },
+    p1: { x: Math.round(player.x), y: Math.round(player.y), fx: +face.x.toFixed(2), fy: +face.y.toFixed(2), fr: player.frame, h: Math.round(health), dr: driving ? 1 : 0, ca: driving ? +Math.atan2(face.y, face.x).toFixed(2) : 0, vx: Math.round(player.vx || 0), vy: Math.round(player.vy || 0), hero: hero, skin: curSkin, shield: invShield > 0 ? 1 : 0 },
     cm: captiveMale ? 1 : 0,
     mh: player2 ? Math.round(player2.health) : 100,
     cn: totalCoins, ct: coinsTotal, kl: kills, sc: score, di: district,
@@ -484,7 +513,7 @@ function updateP2(dt) {
   player2.flipT = Math.max(0, (player2.flipT || 0) - dt); player2.shield = Math.max(0, (player2.shield || 0) - dt);
   if (player2.dead) { player2.respawnT -= dt; if (player2.respawnT <= 0) { player2.dead = false; player2.health = 100; const h = homes[0]; player2.x = h.x + 44; player2.y = h.y + 40; } return; }
   player2.x = ri.x; player2.y = ri.y; player2.face.x = ri.fx; player2.face.y = ri.fy; player2.frame = ri.fr;
-  player2.dr = ri.dr ? 1 : 0; player2.ca = ri.ca || 0; player2.hero = ri.hero || 'male';   // driving state + hero sprite
+  player2.dr = ri.dr ? 1 : 0; player2.ca = ri.ca || 0; player2.hero = ri.hero || 'male'; player2.skin = ri.skin || 0;   // driving state + hero sprite/costume
   player2.fireCD = Math.max(0, player2.fireCD - dt);
   if (ri.fire && player2.fireCD <= 0) {
     const mx = player2.x + 9, my = player2.y + 11, ax = ri.ax || 1, ay = ri.ay || 0, base = Math.atan2(ay, ax);
@@ -566,7 +595,7 @@ function updateClient(dt) {
     NET.send({ t: 'in', x: Math.round(player.x), y: Math.round(player.y), fx: +face.x.toFixed(2), fy: +face.y.toFixed(2), fr: player.frame,
       fire: sendFire, ax: +ax.toFixed(2), ay: +ay.toFixed(2),
       dmg: Math.round(w.dmg * dmgMul), rate: w.rate, spd: w.speed || 620, col: w.color, pel: w.pellets || 1, spr: w.spread || 0, melee: w.type === 'melee',
-      dr: driving ? 1 : 0, ca: driving ? +Math.atan2(face.y, face.x).toFixed(2) : 0, hero: hero });
+      dr: driving ? 1 : 0, ca: driving ? +Math.atan2(face.y, face.x).toFixed(2) : 0, hero: hero, skin: curSkin });
   }
   cam.x = clamp(player.x + player.w / 2 - VIEW_W / 2, 0, LW - VIEW_W);
   cam.y = clamp(player.y + player.h / 2 - VIEW_H / 2, 0, LH - VIEW_H);
@@ -612,7 +641,8 @@ canvas.addEventListener('touchstart', e => {
     const [x, y] = canvasXY(t);
     if (state === 'title') { startGame(); return; }
     if (state === 'win' || state === 'gameover') { location.reload(); return; }
-    if (state === 'shop') { let hit = false; for (let i = 0; i < SHOP.length; i++) { const r = shopRowRect(i); if (x >= r.x && x <= r.x + r.w && y >= r.y && y <= r.y + r.h) { buyItem(i); hit = true; break; } } if (!hit) state = 'play'; continue; }
+    if (state === 'shop') { let hit = false; for (let i = 0; i < SHOP.length; i++) { const r = shopRowRect(i); if (x >= r.x && x <= r.x + r.w && y >= r.y && y <= r.y + r.h) { buyItem(i); hit = true; break; } } if (!hit) { const sb = skinsBtnRect(); if (x >= sb.x && x <= sb.x + sb.w && y >= sb.y && y <= sb.y + sb.h) { state = 'skins'; hit = true; } } if (!hit) state = 'play'; continue; }
+    if (state === 'skins') { let hit = false; for (let i = 0; i < SKINS.length; i++) { const r = skinRect(i); if (x >= r.x && x <= r.x + r.w && y >= r.y && y <= r.y + r.h) { buyOrEquipSkin(i); hit = true; break; } } if (!hit) state = 'shop'; continue; }
     if (inBtn(btnPause, x, y)) { if (state === 'play') { state = 'paused'; AUDIO.stopMusic(); } else if (state === 'paused') { state = 'play'; AUDIO.startMusic(); } continue; }
     if (state !== 'play') continue;
     if ((nearHome || nearShopTown) && inBtn(btnShop, x, y)) { state = 'shop'; continue; }
@@ -1195,7 +1225,7 @@ function draw() {
     const ph = partner.h != null ? partner.h : partner.health;
     if ((partner.shield || 0) > 0) { const pcx = partner.x + 9 - cam.x, pcy = partner.y + 8 - cam.y; ctx.save(); ctx.globalAlpha = 0.4; ctx.strokeStyle = '#6fd0ff'; ctx.lineWidth = 3; ctx.beginPath(); ctx.arc(pcx, pcy, 19, 0, 7); ctx.stroke(); ctx.restore(); }
     if (partner.dr) drawCar(partner.x + 9, partner.y + 11, partner.ca || 0, '#3a6ea5', 1.2);   // partner is driving
-    else spr((partner.hero === 'female' ? IMG.woman : IMG.player)[pf || 0], partner.x - 3, partner.y - 8);
+    else spr(skinSet(partner.hero || 'male', partner.skin || 0)[pf || 0], partner.x - 3, partner.y - 8);
     const tx = Math.round(partner.x + 9 - cam.x), ty = Math.round(partner.y - 16 - cam.y);
     ctx.fillStyle = '#9fd0ff'; ctx.font = 'bold 11px "Trebuchet MS",sans-serif'; ctx.textAlign = 'center'; ctx.fillText('2P', tx, ty); ctx.textAlign = 'left';
     if (typeof ph === 'number') { ctx.fillStyle = 'rgba(0,0,0,.5)'; ctx.fillRect(tx - 14, ty + 4, 28, 3); ctx.fillStyle = '#7fe07f'; ctx.fillRect(tx - 14, ty + 4, 28 * Math.max(0, ph) / 100, 3); }
@@ -1218,6 +1248,7 @@ function draw() {
   if (state === 'play' && (nearVehicle || driving)) drawCarPrompt();
   if (state === 'play' && IS_TOUCH && !driving) drawBuildPrompt();
   if (state === 'shop') drawShop();
+  if (state === 'skins') drawSkins();
   if (IS_TOUCH && (state === 'play' || state === 'paused')) drawTouchUI();
   if (state === 'play' || state === 'paused') drawAbility();
   if (state === 'paused') drawPause();
@@ -1459,7 +1490,7 @@ function drawShopPrompt() {
 function drawShop() {
   ctx.fillStyle = 'rgba(8,14,10,0.82)'; ctx.fillRect(0, 0, VIEW_W, VIEW_H);
   const w = 380, x = VIEW_W / 2 - w / 2, y = VIEW_H / 2 - 130;
-  panel(x, y, w, 70 + SHOP.length * 42 + 16);
+  panel(x, y, w, 70 + (SHOP.length + 1) * 42 + 16);
   ctx.textAlign = 'center'; ctx.textBaseline = 'alphabetic';
   ctx.fillStyle = '#ffe08a'; ctx.font = 'bold 26px Trebuchet MS,sans-serif'; ctx.fillText('🛒 МАГАЗИН ВИЖИВАЛЬНИКА', VIEW_W / 2, y + 34);
   ctx.fillStyle = '#fff'; ctx.font = 'bold 16px Trebuchet MS,sans-serif'; ctx.fillText('💲 Монет: ' + totalCoins, VIEW_W / 2, y + 56);
@@ -1470,8 +1501,37 @@ function drawShop() {
     ctx.fillText((IS_TOUCH ? '' : (i + 1) + '. ') + SHOP[i].label, r.x + 12, r.y + r.h / 2);
     ctx.textAlign = 'right'; ctx.fillStyle = ok ? '#ffd23f' : '#ff7a7a'; ctx.fillText('💲' + c, r.x + r.w - 12, r.y + r.h / 2);
   }
+  const sb = skinsBtnRect();
+  ctx.fillStyle = 'rgba(70,60,95,0.75)'; rr(sb.x, sb.y, sb.w, sb.h, 8); ctx.fill();
+  ctx.strokeStyle = '#b89cff'; ctx.lineWidth = 1.5; rr(sb.x, sb.y, sb.w, sb.h, 8); ctx.stroke();
+  ctx.textAlign = 'center'; ctx.textBaseline = 'middle'; ctx.fillStyle = '#fff'; ctx.font = 'bold 15px Trebuchet MS,sans-serif';
+  ctx.fillText('👕 Костюми →', VIEW_W / 2, sb.y + sb.h / 2);
   ctx.textAlign = 'center'; ctx.textBaseline = 'alphabetic'; ctx.fillStyle = 'rgba(255,255,255,.7)'; ctx.font = '13px Trebuchet MS,sans-serif';
-  ctx.fillText(IS_TOUCH ? 'Торкнись товару, щоб купити · торкнись поза списком — вийти' : 'Натисни 1–6 щоб купити · B/Esc — вийти', VIEW_W / 2, y + 70 + SHOP.length * 42 + 4);
+  ctx.fillText(IS_TOUCH ? 'Торкнись товару, щоб купити · торкнись поза списком — вийти' : 'Натисни 1–6 щоб купити · B/Esc — вийти', VIEW_W / 2, y + 70 + (SHOP.length + 1) * 42 + 6);
+  ctx.textAlign = 'left'; ctx.textBaseline = 'alphabetic';
+}
+function skinsBtnRect() { const w = 380, x = VIEW_W / 2 - w / 2, y = VIEW_H / 2 - 130 + 70 + SHOP.length * 42; return { x, y, w, h: 36 }; }
+function skinRect(i) { const cols = 4, sw = 86, sh = 104, gap = 8, total = cols * sw + (cols - 1) * gap, x0 = VIEW_W / 2 - total / 2, y0 = VIEW_H / 2 - 96, cx = i % cols, cy = (i / cols) | 0; return { x: x0 + cx * (sw + gap), y: y0 + cy * (sh + gap), w: sw, h: sh }; }
+function drawSkins() {
+  ctx.fillStyle = 'rgba(8,14,10,0.85)'; ctx.fillRect(0, 0, VIEW_W, VIEW_H);
+  const pw = 4 * 86 + 3 * 8 + 30, px = VIEW_W / 2 - pw / 2, py = VIEW_H / 2 - 160;
+  panel(px, py, pw, 2 * 112 + 92);
+  ctx.textAlign = 'center'; ctx.textBaseline = 'alphabetic';
+  ctx.fillStyle = '#c9b6ff'; ctx.font = 'bold 24px Trebuchet MS,sans-serif'; ctx.fillText('👕 КОСТЮМИ — ' + (hero === 'female' ? 'Жінка' : 'Чоловік'), VIEW_W / 2, py + 34);
+  ctx.fillStyle = '#fff'; ctx.font = 'bold 15px Trebuchet MS,sans-serif'; ctx.fillText('💲 Монет: ' + totalCoins, VIEW_W / 2, py + 56);
+  for (let i = 0; i < SKINS.length; i++) {
+    const r = skinRect(i), s = SKINS[i], own = ownedSkins.has(i), eq = curSkin === i;
+    ctx.fillStyle = eq ? 'rgba(255,210,63,0.22)' : 'rgba(40,52,36,0.7)'; rr(r.x, r.y, r.w, r.h, 10); ctx.fill();
+    ctx.strokeStyle = eq ? '#ffd23f' : 'rgba(0,0,0,0.4)'; ctx.lineWidth = 2; rr(r.x, r.y, r.w, r.h, 10); ctx.stroke();
+    const fr = skinSet(hero, i)[0]; ctx.drawImage(fr, r.x + r.w / 2 - 22, r.y + 12, 44, 58);
+    ctx.fillStyle = '#fff'; ctx.font = 'bold 12px Trebuchet MS,sans-serif'; ctx.fillText(s.name, r.x + r.w / 2, r.y + r.h - 24);
+    ctx.font = 'bold 11px Trebuchet MS,sans-serif';
+    if (eq) { ctx.fillStyle = '#ffd23f'; ctx.fillText('вдягнено', r.x + r.w / 2, r.y + r.h - 9); }
+    else if (own) { ctx.fillStyle = '#9fe0a0'; ctx.fillText('вдягнути', r.x + r.w / 2, r.y + r.h - 9); }
+    else { ctx.fillStyle = totalCoins >= s.cost ? '#ffd23f' : '#ff7a7a'; ctx.fillText('💲' + s.cost, r.x + r.w / 2, r.y + r.h - 9); }
+  }
+  ctx.fillStyle = 'rgba(255,255,255,.7)'; ctx.font = '13px Trebuchet MS,sans-serif';
+  ctx.fillText(IS_TOUCH ? 'Торкнись костюма · торкнись поза — назад' : 'Клік по костюму · Esc/B — назад', VIEW_W / 2, py + 2 * 112 + 80);
   ctx.textAlign = 'left'; ctx.textBaseline = 'alphabetic';
 }
 function drawHUD() {
