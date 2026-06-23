@@ -122,22 +122,46 @@ let hero = 'male'; try { hero = localStorage.getItem('punk_hero') || 'male'; } c
 let captiveMale = false;     // the rescued captive is a man (when the hero is the woman)
 let abilCD = 0, flipT = 0, invShield = 0; const flipDir = { x: 1, y: 0 };
 const ABIL_CD = 12, FLIP_DUR = 0.42, FLIP_SPEED = 880, MALE_INV = 5;
-// ---- costumes (skins): recolour the hero sprite ----
+// ---- costumes (skins): fully distinct outfits, drawn procedurally ----
 const SKINS = [
-  { name: 'Класика', cost: 0, tint: null, a: 0 },
-  { name: 'Багряний', cost: 12, tint: '#c0392b', a: 0.5 },
-  { name: 'Лазурний', cost: 12, tint: '#2d6cdf', a: 0.5 },
-  { name: 'Смарагд', cost: 16, tint: '#2e9e5b', a: 0.5 },
-  { name: 'Золото', cost: 30, tint: '#e8b020', a: 0.55 },
-  { name: 'Тінь', cost: 22, tint: '#1b1b26', a: 0.62 },
-  { name: 'Неон', cost: 26, tint: '#d63ccb', a: 0.5 },
+  { name: 'Класика', cost: 0, base: true },
+  { name: 'Солдат', cost: 14, spec: { skin: '#caa688', body: ['#5a6340', '#454d30'], arms: '#4d5436', legs: '#3a4028', accent: '#2e3320', deco: 'pockets', head: { type: 'helmet', col: '#4a5236' } } },
+  { name: 'Хазмат', cost: 18, spec: { skin: '#e6df5a', body: ['#ecd83e', '#cdb822'], arms: '#e0ca34', legs: '#cdb822', accent: '#9a8a18', deco: 'onepiece', head: { type: 'hazmat', col: '#ecd83e', visor: '#33454f' } } },
+  { name: 'Лицар', cost: 26, spec: { skin: '#caa688', body: ['#9aa2ab', '#787f88'], arms: '#838b94', legs: '#5a6068', accent: '#cfd6dd', deco: 'plates', head: { type: 'knight', col: '#aab0b8' } } },
+  { name: 'Ніндзя', cost: 20, spec: { skin: '#caa688', body: ['#26262e', '#17171d'], arms: '#1f1f26', legs: '#141419', accent: '#8a1a1a', deco: 'belt', head: { type: 'ninja', col: '#1a1a20' } } },
+  { name: 'Робітник', cost: 16, spec: { skin: '#caa688', body: ['#e0731f', '#c25e12'], arms: '#caa688', legs: '#33415a', accent: '#ffd23f', deco: 'hivis', head: { type: 'hardhat', col: '#f3a712' } } },
+  { name: 'Кібер', cost: 24, spec: { skin: '#b8a48c', body: ['#2a2f45', '#1b2030'], arms: '#242a3e', legs: '#1b2030', accent: '#34e0e0', deco: 'neon', head: { type: 'cyber', col: '#2a2f45', visor: '#34e0e0' } } },
 ];
-function tintFrames(base, tint, a) {
-  if (!tint) return base;
-  return base.map(f => { const c = document.createElement('canvas'); c.width = f.width; c.height = f.height; const x = c.getContext('2d'); x.drawImage(f, 0, 0); x.globalCompositeOperation = 'source-atop'; x.globalAlpha = a; x.fillStyle = tint; x.fillRect(0, 0, c.width, c.height); return c; });
+function costumeCanvas(spec, step, female) {
+  const c = document.createElement('canvas'); c.width = 24; c.height = 32; const x = c.getContext('2d');
+  const RR = (X, Y, W, H, r) => { x.beginPath(); x.moveTo(X + r, Y); x.arcTo(X + W, Y, X + W, Y + H, r); x.arcTo(X + W, Y + H, X, Y + H, r); x.arcTo(X, Y + H, X, Y, r); x.arcTo(X, Y, X + W, Y, r); x.closePath(); };
+  const eyes = col => { x.fillStyle = col || '#1a1410'; x.beginPath(); x.arc(9.5, 8, 1.6, 0, 7); x.arc(14.5, 8, 1.6, 0, 7); x.fill(); };
+  const l = step === 1 ? 2 : 0, r2 = step === 2 ? 2 : 0;
+  x.fillStyle = 'rgba(0,0,0,.28)'; x.beginPath(); x.ellipse(12, 30, 9, 3.6, 0, 0, 7); x.fill();
+  x.fillStyle = spec.legs; RR(7, 22, 4, 8 - l, 2); x.fill(); RR(13, 22, 4, 8 - r2, 2); x.fill();
+  const g = x.createLinearGradient(0, 12, 0, 25); g.addColorStop(0, spec.body[0]); g.addColorStop(1, spec.body[1]); x.fillStyle = g;
+  if (female) { RR(5, 12, 14, 11, 5); x.fill(); x.beginPath(); x.moveTo(4, 26); x.lineTo(7, 21); x.lineTo(17, 21); x.lineTo(20, 26); x.closePath(); x.fill(); }   // skirt
+  else { RR(4, 12, 16, 13, 5); x.fill(); }
+  x.fillStyle = spec.accent; RR(female ? 5 : 4, 12, female ? 14 : 16, 2, 2); x.fill();
+  x.fillStyle = spec.arms; RR(2, 14, 4, 8, 3); x.fill(); RR(18, 14, 4, 8, 3); x.fill();
+  if (spec.deco === 'pockets') { x.fillStyle = spec.accent; x.fillRect(7, 18, 3, 3); x.fillRect(14, 18, 3, 3); }
+  else if (spec.deco === 'plates') { x.strokeStyle = 'rgba(255,255,255,.55)'; x.lineWidth = 1; x.beginPath(); x.moveTo(6, 16); x.lineTo(18, 16); x.moveTo(6, 20); x.lineTo(18, 20); x.stroke(); }
+  else if (spec.deco === 'hivis') { x.fillStyle = spec.accent; x.fillRect(5, 15, 14, 2); x.fillRect(5, 20, 14, 2); }
+  else if (spec.deco === 'belt') { x.fillStyle = spec.accent; x.fillRect(5, 21, 14, 2); }
+  else if (spec.deco === 'neon') { x.strokeStyle = spec.head.visor; x.lineWidth = 1.2; x.beginPath(); x.moveTo(12, 13); x.lineTo(12, 24); x.moveTo(6, 17); x.lineTo(18, 17); x.stroke(); }
+  // head / headgear
+  const ht = spec.head.type;
+  if (ht === 'helmet') { x.fillStyle = spec.skin; x.beginPath(); x.arc(12, 8, 7, 0, 7); x.fill(); eyes(); x.fillStyle = spec.head.col; x.beginPath(); x.arc(12, 7, 7.4, Math.PI, 0); x.fill(); x.fillRect(5, 6, 14, 2); }
+  else if (ht === 'hazmat') { x.fillStyle = spec.head.col; x.beginPath(); x.arc(12, 8, 7.6, 0, 7); x.fill(); x.fillStyle = spec.head.visor; RR(8, 4.5, 8, 6, 2); x.fill(); x.fillStyle = '#555'; x.beginPath(); x.arc(12, 12, 2, 0, 7); x.fill(); }
+  else if (ht === 'knight') { x.fillStyle = spec.head.col; x.beginPath(); x.arc(12, 8, 7.4, 0, 7); x.fill(); x.fillStyle = '#2a2e33'; x.fillRect(11, 3.5, 2, 9); x.strokeStyle = '#e3e8ee'; x.lineWidth = 1; x.beginPath(); x.arc(12, 8, 7.4, 0, 7); x.stroke(); }
+  else if (ht === 'ninja') { x.fillStyle = spec.head.col; x.beginPath(); x.arc(12, 8, 7.4, 0, 7); x.fill(); x.fillStyle = spec.skin; x.fillRect(5.5, 6.6, 13, 2.6); eyes('#1a1410'); x.fillStyle = spec.head.col; x.fillRect(5.5, 9.2, 13, 1.2); }
+  else if (ht === 'hardhat') { x.fillStyle = spec.skin; x.beginPath(); x.arc(12, 8, 7, 0, 7); x.fill(); eyes(); x.fillStyle = spec.head.col; x.beginPath(); x.arc(12, 6, 6.6, Math.PI, 0); x.fill(); x.fillRect(4, 5, 16, 2); x.fillRect(11, 1, 2, 5); }
+  else if (ht === 'cyber') { x.fillStyle = spec.skin; x.beginPath(); x.arc(12, 8, 7, 0, 7); x.fill(); x.fillStyle = '#2a2e33'; x.beginPath(); x.arc(12, 6, 7, Math.PI, 0); x.fill(); x.fillStyle = spec.head.visor; RR(6, 6.5, 12, 3.4, 1.5); x.fill(); x.fillStyle = '#fff'; x.globalAlpha = .6; x.fillRect(7, 7.2, 3, 1.4); x.globalAlpha = 1; }
+  return c;
 }
-const skinPlayer = SKINS.map(s => tintFrames(IMG.player, s.tint, s.a));
-const skinWoman = SKINS.map(s => tintFrames(IMG.woman, s.tint, s.a));
+const buildSkin = (spec, female) => [0, 1, 2].map(s => costumeCanvas(spec, s, female));
+const skinPlayer = SKINS.map(s => s.base ? IMG.player : buildSkin(s.spec, false));
+const skinWoman = SKINS.map(s => s.base ? IMG.woman : buildSkin(s.spec, true));
 const skinSet = (h, idx) => (h === 'female' ? skinWoman : skinPlayer)[idx] || (h === 'female' ? IMG.woman : IMG.player);
 let ownedSkins, curSkin;
 try { ownedSkins = new Set(JSON.parse(localStorage.getItem('punk_skins') || '[0]')); } catch (e) { ownedSkins = new Set([0]); }
