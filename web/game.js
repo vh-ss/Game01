@@ -227,7 +227,7 @@ const npcs = [];
 for (const tn of towns) {
   npcs.push({ x: tn.shop[0], y: tn.shop[1], bx: tn.shop[0], by: tn.shop[1], w: 18, h: 22, kind: 'shop', town: tn, frame: 0, walkT: 0, wanderT: 0, vx: 0, vy: 0 });
   npcs.push({ x: tn.quest[0], y: tn.quest[1], bx: tn.quest[0], by: tn.quest[1], w: 18, h: 22, kind: 'quest', town: tn, frame: 0, walkT: 0, wanderT: 0, vx: 0, vy: 0, gave: false });
-  (tn.villagers || []).forEach((v, i) => npcs.push({ x: v[0], y: v[1], bx: v[0], by: v[1], w: 18, h: 22, kind: 'villager', town: tn, fem: i % 2 === 0, frame: 0, walkT: 0, wanderT: i * 0.5, vx: 0, vy: 0 }));
+  (tn.villagers || []).forEach((v, i) => npcs.push({ x: v[0], y: v[1], bx: v[0], by: v[1], w: 18, h: 22, kind: i === 0 ? 'merc' : 'villager', town: tn, fem: i % 2 === 0, frame: 0, walkT: 0, wanderT: i * 0.5, vx: 0, vy: 0 }));
 }
 let nearShopTown = null, nearQuestNPC = null, sideQuest = null, sideDone = 0, bountyKilled = false;
 const rint = n => Math.floor(Math.random() * n);
@@ -288,7 +288,7 @@ function updateSideQuest(dt) {
   } else if (fail) { if (q.npc) q.npc.gave = false; showToast('⌛ Не встиг — завдання провалено'); AUDIO.sfx.hurt(); sideQuest = null; }
 }
 function updateNPCs(dt) {
-  nearShopTown = null; nearQuestNPC = null;
+  nearShopTown = null; nearQuestNPC = null; nearMerc = null;
   const pcx = player.x + 9, pcy = player.y + 11;
   for (const n of npcs) {
     if (n.kind === 'villager') {
@@ -300,9 +300,52 @@ function updateNPCs(dt) {
     }
     const d = Math.hypot(pcx - (n.x + 9), pcy - (n.y + 11));
     if (n.kind === 'shop' && d < 46) nearShopTown = n.town;
+    if (n.kind === 'merc' && d < 46) nearMerc = n.town;
     if (n.kind === 'quest' && d < 46) { nearQuestNPC = n; if (!sideQuest) offerQuest(n); }
   }
   updateSideQuest(dt);
+}
+// ---- mercenary camp: buy trained animal companions ----
+const ANIMALS = [
+  { name: 'Пес', icon: '🐕', cost: 18, hp: 40, speed: 165, dmg: 3, rate: 0.45, range: 30, atk: 'melee', desc: 'швидкий, дешевий' },
+  { name: 'Вовк', icon: '🐺', cost: 34, hp: 65, speed: 188, dmg: 6, rate: 0.5, range: 34, atk: 'melee', desc: 'сильний, прудкий' },
+  { name: 'Пантера', icon: '🐆', cost: 48, hp: 55, speed: 228, dmg: 8, rate: 0.4, range: 34, atk: 'melee', desc: 'дуже швидка, б\'є часто' },
+  { name: 'Ведмідь', icon: '🐻', cost: 65, hp: 150, speed: 122, dmg: 13, rate: 0.75, range: 42, atk: 'melee', desc: 'танк, нищівний' },
+  { name: 'Сокіл', icon: '🦅', cost: 42, hp: 28, speed: 240, dmg: 4, rate: 0.7, range: 250, atk: 'ranged', desc: 'дальня атака з повітря' },
+];
+const pets = [], MAX_PETS = 3;
+let nearMerc = null;
+function buyPet(i) {
+  const a = ANIMALS[i]; if (!a) return;
+  if (pets.length >= MAX_PETS) { AUDIO.sfx.hurt(); showToast('Уже маєш ' + MAX_PETS + ' тварин'); return; }
+  if (totalCoins < a.cost) { AUDIO.sfx.hurt(); showToast('Замало монет (' + a.cost + ')'); return; }
+  totalCoins -= a.cost;
+  pets.push({ x: player.x + (Math.random() * 40 - 20), y: player.y + 24, w: 16, h: 14, type: i, hp: a.hp, maxhp: a.hp, fireCD: 0, aimx: 1, aimy: 0, bob: Math.random() * 6 });
+  AUDIO.sfx.win(); showToast(a.icon + ' ' + a.name + ' приєднався!');
+}
+function updatePets(dt, combat) {
+  for (let i = pets.length - 1; i >= 0; i--) {
+    const p = pets[i], a = ANIMALS[p.type];
+    p.bob += dt;
+    const pcx = p.x + 8, pcy = p.y + 7, plx = player.x + 9, ply = player.y + 11, distToP = Math.hypot(plx - pcx, ply - pcy);
+    let tgt = null, bd = 1e9;
+    if (combat) for (const z of zombies) { if (z.dead || z.hidden) continue; const zx = z.x + z.w / 2, zy = z.y + z.h / 2; if (Math.hypot(zx - plx, zy - ply) > 340) continue; const d = (zx - pcx) ** 2 + (zy - pcy) ** 2; if (d < bd) { bd = d; tgt = z; } }
+    let mx = 0, my = 0;
+    if (tgt) {
+      const zx = tgt.x + tgt.w / 2, zy = tgt.y + tgt.h / 2, d = Math.hypot(zx - pcx, zy - pcy) || 1;
+      p.aimx = (zx - pcx) / d; p.aimy = (zy - pcy) / d;
+      p.fireCD -= dt;
+      if (a.atk === 'ranged') { if (d > a.range) { mx = p.aimx; my = p.aimy; } if (p.fireCD <= 0 && d < a.range) { bullets.push({ x: pcx, y: pcy, vx: p.aimx * 520, vy: p.aimy * 520, life: 0.9, dmg: a.dmg, color: '#cfe0ff' }); p.fireCD = a.rate; } }
+      else { if (d > a.range) { mx = p.aimx; my = p.aimy; } else if (p.fireCD <= 0) { damageZombie(tgt, a.dmg, p.aimx, p.aimy); spawnBurst(zx, zy, '#ffd0d0', 4, 70, 2); p.fireCD = a.rate; } }
+    }
+    if (!tgt || distToP > 150) { if (distToP > 52) { mx = (plx - pcx) / distToP; my = (ply - pcy) / distToP; } else if (!tgt) { mx = my = 0; } }
+    if (mx || my) { const m = Math.hypot(mx, my) || 1; tryMove(p, mx / m * a.speed * dt, my / m * a.speed * dt); }
+    if (combat) {
+      for (const z of zombies) { if (z.dead || z.hidden) continue; if (aabb(p.x, p.y, p.w, p.h, z.x, z.y, z.w, z.h)) { p.hp -= (z.ztype === 'tank' ? 14 : 8) * dt; } }
+      if (p.hp <= 0) { spawnBurst(pcx, pcy, '#c0392b', 12, 120, 3); showToast(a.icon + ' ' + a.name + ' загинув'); pets.splice(i, 1); continue; }
+      if (p.hp < a.maxhp) for (const hm of homes) if (aabb(p.x, p.y, p.w, p.h, hm.x - 16, hm.y - 40, 128, 112)) p.hp = Math.min(a.maxhp, p.hp + 30 * dt);
+    }
+  }
 }
 function triggerEvent() {
   const px = player.x, py = player.y;
@@ -468,6 +511,8 @@ addEventListener('keydown', e => {
   else if (e.code === 'KeyE' && state === 'play') { if (driving) exitCar(); else if (nearVehicle) enterCar(nearVehicle); }
   else if (e.code === 'KeyC' && state === 'play') buildBarricade();
   else if (e.code === 'KeyB' && state === 'play' && (nearHome || nearShopTown)) { state = 'shop'; }
+  else if (e.code === 'KeyB' && state === 'play' && nearMerc) { state = 'merc'; }
+  else if ((e.code === 'KeyB' || e.code === 'Escape') && state === 'merc') { state = 'play'; }
   else if ((e.code === 'KeyB' || e.code === 'Escape') && state === 'shop') { state = 'play'; }
   else if ((e.code === 'KeyB' || e.code === 'Escape') && state === 'skins') { state = 'shop'; }
   else if (e.code === 'Escape' && state === 'play') { state = 'paused'; AUDIO.stopMusic(); }
@@ -478,7 +523,7 @@ addEventListener('keydown', e => {
 addEventListener('keyup', e => { keys[e.code] = false; });
 const mouse = { x: VIEW_W / 2, y: VIEW_H / 2, down: false, moved: false };
 canvas.addEventListener('mousemove', e => { const r = canvas.getBoundingClientRect(); mouse.x = e.clientX - r.left; mouse.y = e.clientY - r.top; mouse.moved = true; });
-canvas.addEventListener('mousedown', () => { canvas.focus(); if (state === 'title') { startGame(); return; } if (state === 'shop') { for (let i = 0; i < SHOP.length; i++) { const r = shopRowRect(i); if (mouse.x >= r.x && mouse.x <= r.x + r.w && mouse.y >= r.y && mouse.y <= r.y + r.h) { buyItem(i); return; } } const sb = skinsBtnRect(); if (mouse.x >= sb.x && mouse.x <= sb.x + sb.w && mouse.y >= sb.y && mouse.y <= sb.y + sb.h) state = 'skins'; return; } if (state === 'skins') { for (let i = 0; i < activeSkins().length; i++) { const r = skinRect(i); if (mouse.x >= r.x && mouse.x <= r.x + r.w && mouse.y >= r.y && mouse.y <= r.y + r.h) { buyOrEquipSkin(i); return; } } state = 'shop'; return; } if (state !== 'play') return; if (inAbil(mouse.x, mouse.y)) { useAbility(); return; } if (inQuestPanel(mouse.x, mouse.y)) { questsCollapsed = !questsCollapsed; return; } const wi = weaponSlotAt(mouse.x, mouse.y); if (wi >= 0) { if (owned[wi]) curW = wi; return; } mouse.down = true; });
+canvas.addEventListener('mousedown', () => { canvas.focus(); if (state === 'title') { startGame(); return; } if (state === 'shop') { for (let i = 0; i < SHOP.length; i++) { const r = shopRowRect(i); if (mouse.x >= r.x && mouse.x <= r.x + r.w && mouse.y >= r.y && mouse.y <= r.y + r.h) { buyItem(i); return; } } const sb = skinsBtnRect(); if (mouse.x >= sb.x && mouse.x <= sb.x + sb.w && mouse.y >= sb.y && mouse.y <= sb.y + sb.h) state = 'skins'; return; } if (state === 'skins') { for (let i = 0; i < activeSkins().length; i++) { const r = skinRect(i); if (mouse.x >= r.x && mouse.x <= r.x + r.w && mouse.y >= r.y && mouse.y <= r.y + r.h) { buyOrEquipSkin(i); return; } } state = 'shop'; return; } if (state === 'merc') { for (let i = 0; i < ANIMALS.length; i++) { const r = mercRowRect(i); if (mouse.x >= r.x && mouse.x <= r.x + r.w && mouse.y >= r.y && mouse.y <= r.y + r.h) { buyPet(i); return; } } state = 'play'; return; } if (state !== 'play') return; if (inAbil(mouse.x, mouse.y)) { useAbility(); return; } if (inQuestPanel(mouse.x, mouse.y)) { questsCollapsed = !questsCollapsed; return; } const wi = weaponSlotAt(mouse.x, mouse.y); if (wi >= 0) { if (owned[wi]) curW = wi; return; } mouse.down = true; });
 
 // hero picker on the title screen
 { const btns = document.querySelectorAll('#heroPick .hero');
@@ -495,7 +540,7 @@ function showEndScreen() {
   const stat = ' · Очки: ' + score + ' · Рекорд: ' + best + ' · Вбито: ' + kills;
   const btn = document.getElementById('againBtn');
   if (state === 'win') {
-    t.textContent = '🎉 РАЙОН ' + district + ' ЗАЧИЩЕНО!'; t.className = 'win'; p.textContent = 'Жінку врятовано, боса повалено!' + stat;
+    t.textContent = '🎉 РАЙОН ' + district + ' ЗАЧИЩЕНО!'; t.className = 'win'; p.textContent = (captiveMale ? 'Чоловіка' : 'Жінку') + ' врятовано, боса повалено!' + stat;
     btn.textContent = '➜ Наступний район'; btn.onclick = () => { try { sessionStorage.setItem('punktown_district', district + 1); } catch (e) {} location.reload(); };
   } else {
     t.textContent = '☠ КІНЕЦЬ ГРИ'; t.className = 'lose'; p.textContent = (failReason || 'Тебе здолали.') + ' · Дійшов до району ' + district + stat;
@@ -670,7 +715,7 @@ function updateClient(dt) {
   stamina = clamp(stamina + (running ? -STAM_DRAIN : STAM_REGEN) * dt, 0, STAM_MAX);
   nearVehicle = null; if (!driving) { let bd = 46 * 46; for (const v of vehicles) { const d = (v.x - player.x - 9) ** 2 + (v.y - player.y - 11) ** 2; if (d < bd) { bd = d; nearVehicle = v; } } }
   clientPickups();
-  updateNPCs(dt);
+  updateNPCs(dt); updatePets(dt, false);
 
   // weapon select (owned only) + auto-reload from a spare magazine
   for (let i = 0; i < WEAPONS.length; i++) if (keys['Digit' + (i + 1)] && owned[i]) curW = i;
@@ -743,9 +788,11 @@ canvas.addEventListener('touchstart', e => {
     if (state === 'win' || state === 'gameover') { location.reload(); return; }
     if (state === 'shop') { let hit = false; for (let i = 0; i < SHOP.length; i++) { const r = shopRowRect(i); if (x >= r.x && x <= r.x + r.w && y >= r.y && y <= r.y + r.h) { buyItem(i); hit = true; break; } } if (!hit) { const sb = skinsBtnRect(); if (x >= sb.x && x <= sb.x + sb.w && y >= sb.y && y <= sb.y + sb.h) { state = 'skins'; hit = true; } } if (!hit) state = 'play'; continue; }
     if (state === 'skins') { let hit = false; for (let i = 0; i < activeSkins().length; i++) { const r = skinRect(i); if (x >= r.x && x <= r.x + r.w && y >= r.y && y <= r.y + r.h) { buyOrEquipSkin(i); hit = true; break; } } if (!hit) state = 'shop'; continue; }
+    if (state === 'merc') { let hit = false; for (let i = 0; i < ANIMALS.length; i++) { const r = mercRowRect(i); if (x >= r.x && x <= r.x + r.w && y >= r.y && y <= r.y + r.h) { buyPet(i); hit = true; break; } } if (!hit) state = 'play'; continue; }
     if (inBtn(btnPause, x, y)) { if (state === 'play') { state = 'paused'; AUDIO.stopMusic(); } else if (state === 'paused') { state = 'play'; AUDIO.startMusic(); } continue; }
     if (state !== 'play') continue;
     if ((nearHome || nearShopTown) && inBtn(btnShop, x, y)) { state = 'shop'; continue; }
+    if (nearMerc && inBtn(btnShop, x, y)) { state = 'merc'; continue; }
     if ((nearVehicle || driving) && inBtn(btnCar, x, y)) { if (driving) exitCar(); else enterCar(nearVehicle); continue; }
     if (!driving && inBtn(btnBuild, x, y)) { buildBarricade(); continue; }
     if (inAbil(x, y)) { useAbility(); continue; }
@@ -1020,7 +1067,7 @@ function update(dt) {
   if (keyItem && !keyItem.got && eitherOver(keyItem.x - 6, keyItem.y - 6, 28, 28)) { keyItem.got = true; hasKey = true; AUDIO.sfx.pickup(); spawnBurst(keyItem.x + 6, keyItem.y + 6, '#ffd23f', 16, 140, 3); showToast('Знайдено ключ! Іди до будинку 🏚'); }
   // unlock the house with the key (either player)
   if (hasKey && !womanFreed && lockedHouse && eitherOver(lockedHouse.x - 10, lockedHouse.y, 116, 110)) {
-    womanFreed = true; woman.active = true; AUDIO.sfx.pickup(); spawnBurst(lockedHouse.x + 48, lockedHouse.y + 60, '#ffd23f', 20, 160, 3); say('Дякую, що відчинив! Прикрий мене — і веди ДОДОМУ, будь ласка.');
+    womanFreed = true; woman.active = true; AUDIO.sfx.pickup(); spawnBurst(lockedHouse.x + 48, lockedHouse.y + 60, '#ffd23f', 20, 160, 3); say('Дякую, що ' + (hero === 'female' ? 'відчинила' : 'відчинив') + '! Прикрий мене — і веди ДОДОМУ, будь ласка.');
   }
   // woman: follow, take damage, escort, or die
   if (woman && woman.active && !womanRescued && !womanDead) {
@@ -1060,7 +1107,7 @@ function update(dt) {
     }
     for (const z of zombies) if (!z.hidden && woman.invuln <= 0 && aabb(woman.x, woman.y, woman.w, woman.h, z.x, z.y, z.w, z.h)) { woman.hp -= 14; woman.invuln = 0.6; woman.flash = 0.14; spawnBurst(wcx, wcy, '#e0518f', 6, 90, 2); break; }
     if (woman.hp <= 0) { womanDead = true; state = 'gameover'; failReason = 'Жінку вбили — місію провалено'; AUDIO.stopMusic(); AUDIO.sfx.lose(); }
-    for (const hm of homes) if (aabb(woman.x, woman.y, woman.w, woman.h, hm.x - 16, hm.y - 40, 128, 112)) { womanRescued = true; woman.active = false; spawnBurst(woman.x + 9, woman.y + 11, '#7dff9a', 16, 130, 3); say('Я вдома! Дякую, що врятував мене! 💚'); AUDIO.sfx.win(); }
+    for (const hm of homes) if (aabb(woman.x, woman.y, woman.w, woman.h, hm.x - 16, hm.y - 40, 128, 112)) { womanRescued = true; woman.active = false; spawnBurst(woman.x + 9, woman.y + 11, '#7dff9a', 16, 130, 3); say('Я вдома! Дякую, що ' + (hero === 'female' ? 'врятувала' : 'врятував') + ' мене! 💚'); AUDIO.sfx.win(); }
   }
   ammoCrates = ammoCrates.filter(a => {
     if (WEAPONS[curW].mag !== Infinity && reserve[curW] < MAX_MAGS && aabb(player.x, player.y, player.w, player.h, a.x, a.y, a.w, a.h)) { reserve[curW] = Math.min(MAX_MAGS, reserve[curW] + 1); spawnBurst(a.x + 10, a.y + 8, '#ffd23f', 8, 90, 2); AUDIO.sfx.pickup(); showToast('+ магазин (' + WEAPONS[curW].name + ')'); return false; }
@@ -1085,7 +1132,7 @@ function update(dt) {
   hurtFlash = Math.max(0, hurtFlash - dt * 1.5); shakeT = Math.max(0, shakeT - dt); invuln = Math.max(0, invuln - dt); toastT = Math.max(0, toastT - dt); swingFx = Math.max(0, swingFx - dt); speechT = Math.max(0, speechT - dt);
   comboT = Math.max(0, comboT - dt); if (comboT <= 0) combo = 0;
   for (let i = particles.length - 1; i >= 0; i--) { const p = particles[i]; p.vy += (p.grav || 0) * dt; p.x += p.vx * dt; p.y += p.vy * dt; p.life -= dt; if (p.life <= 0) particles.splice(i, 1); }
-  updateBurn(dt); updateAllies(dt); updateBarricades(dt); updateNPCs(dt);
+  updateBurn(dt); updateAllies(dt); updateBarricades(dt); updateNPCs(dt); updatePets(dt, true);
 
   checkQuests();
 
@@ -1245,7 +1292,7 @@ function draw() {
     if (woman.weapon != null) { ctx.fillStyle = woman.ammo > 0 ? '#ffd23f' : '#ff6a6a'; ctx.font = 'bold 8px Calibri'; ctx.fillText('⦿' + woman.ammo, woman.x + 9 - cam.x, hy - 13); }
     ctx.textAlign = 'left';
   }
-  drawNPCs();
+  drawNPCs(); drawPets();
   // squad survivors
   for (const a of allies) {
     spr(IMG.player[a.frame], a.x - 3, a.y - 8);
@@ -1350,11 +1397,12 @@ function draw() {
     else if (sideQuest.kind === 'bounty' && sideQuest.target && !sideQuest.target.dead) drawPointer(sideQuest.target.x + 13, sideQuest.target.y, '🎯 ЦІЛЬ', '#ff5a4a');
   }
   drawHUD(); drawQuests(); drawSideQuest(); drawWeaponBar(); drawSpeech(); drawMinimap();
-  if (state === 'play' && (nearHome || nearShopTown)) drawShopPrompt();
+  if (state === 'play' && (nearHome || nearShopTown || nearMerc)) drawShopPrompt();
   if (state === 'play' && (nearVehicle || driving)) drawCarPrompt();
   if (state === 'play' && IS_TOUCH && !driving) drawBuildPrompt();
   if (state === 'shop') drawShop();
   if (state === 'skins') drawSkins();
+  if (state === 'merc') drawMerc();
   if (IS_TOUCH && (state === 'play' || state === 'paused')) drawTouchUI();
   if (state === 'play' || state === 'paused') drawAbility();
   if (state === 'paused') drawPause();
@@ -1540,10 +1588,42 @@ function drawNPCs() {
     const ax = Math.round(n.x + 9 - cam.x), ay = Math.round(n.y - 14 - cam.y);
     ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
     if (n.kind === 'shop') { ctx.fillStyle = 'rgba(0,0,0,.4)'; ctx.beginPath(); ctx.arc(ax, ay, 9, 0, 7); ctx.fill(); ctx.font = '14px Calibri'; ctx.fillStyle = '#fff'; ctx.fillText('🛒', ax, ay + 1); }
+    else if (n.kind === 'merc') { ctx.fillStyle = 'rgba(0,0,0,.4)'; ctx.beginPath(); ctx.arc(ax, ay, 9, 0, 7); ctx.fill(); ctx.font = '14px Calibri'; ctx.fillStyle = '#fff'; ctx.fillText('🐾', ax, ay + 1); }
     else if (n.kind === 'quest') { ctx.fillStyle = 'rgba(0,0,0,.4)'; ctx.beginPath(); ctx.arc(ax, ay, 9, 0, 7); ctx.fill(); ctx.font = 'bold 15px Calibri'; ctx.fillStyle = sideQuest && sideQuest.npc === n ? '#9fe0ff' : '#ffd23f'; ctx.fillText(sideQuest && sideQuest.npc === n ? '…' : '!', ax, ay + 1); }
     else { ctx.fillStyle = '#bfe0ff'; ctx.beginPath(); ctx.arc(ax, ay + 2, 2.4, 0, 7); ctx.fill(); }
     ctx.textAlign = 'left'; ctx.textBaseline = 'alphabetic';
   }
+}
+function drawPets() {
+  for (const p of pets) {
+    const a = ANIMALS[p.type], sx = Math.round(p.x + 8 - cam.x), sy = Math.round(p.y + 7 - cam.y);
+    ctx.fillStyle = 'rgba(0,0,0,.25)'; ctx.beginPath(); ctx.ellipse(sx, sy + 7, 8, 3, 0, 0, 7); ctx.fill();
+    ctx.font = '18px Calibri'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+    ctx.fillText(a.icon, sx, sy - 1 + Math.sin(p.bob * 8) * 1.2);
+    if (p.hp < a.maxhp) { ctx.fillStyle = 'rgba(0,0,0,.5)'; ctx.fillRect(sx - 9, sy - 11, 18, 3); ctx.fillStyle = '#7fe07f'; ctx.fillRect(sx - 9, sy - 11, 18 * Math.max(0, p.hp) / a.maxhp, 3); }
+    ctx.textAlign = 'left'; ctx.textBaseline = 'alphabetic';
+  }
+}
+function mercRowRect(i) { const w = 410, x = VIEW_W / 2 - w / 2, y = VIEW_H / 2 - 150 + 64 + i * 48; return { x, y, w, h: 42 }; }
+function drawMerc() {
+  ctx.fillStyle = 'rgba(8,14,10,0.85)'; ctx.fillRect(0, 0, VIEW_W, VIEW_H);
+  const w = 410, x = VIEW_W / 2 - w / 2, y = VIEW_H / 2 - 150;
+  panel(x, y, w, 64 + ANIMALS.length * 48 + 30);
+  ctx.textAlign = 'center'; ctx.textBaseline = 'alphabetic';
+  ctx.fillStyle = '#ffd9a0'; ctx.font = 'bold 24px Trebuchet MS,sans-serif'; ctx.fillText('🐾 ТАБІР НАЙМАНЦІВ', VIEW_W / 2, y + 32);
+  ctx.fillStyle = '#fff'; ctx.font = 'bold 15px Trebuchet MS,sans-serif'; ctx.fillText('💲 Монет: ' + totalCoins + '   ·   Тварин: ' + pets.length + '/' + MAX_PETS, VIEW_W / 2, y + 52);
+  for (let i = 0; i < ANIMALS.length; i++) {
+    const r = mercRowRect(i), a = ANIMALS[i], ok = totalCoins >= a.cost && pets.length < MAX_PETS;
+    ctx.fillStyle = ok ? 'rgba(60,90,55,0.7)' : 'rgba(60,40,40,0.5)'; rr(r.x, r.y, r.w, r.h, 8); ctx.fill();
+    ctx.textAlign = 'left'; ctx.textBaseline = 'middle';
+    ctx.font = '22px Calibri'; ctx.fillStyle = '#fff'; ctx.fillText(a.icon, r.x + 16, r.y + r.h / 2);
+    ctx.font = 'bold 15px Trebuchet MS,sans-serif'; ctx.fillStyle = ok ? '#fff' : '#b59a9a'; ctx.fillText(a.name, r.x + 44, r.y + r.h / 2 - 8);
+    ctx.font = '11px Trebuchet MS,sans-serif'; ctx.fillStyle = '#aac4d4'; ctx.fillText('❤' + a.hp + '  ⚔' + a.dmg + '  ⚡' + a.speed + '  ' + (a.atk === 'ranged' ? '🏹 дальній' : '🦷 ближній'), r.x + 44, r.y + r.h / 2 + 9);
+    ctx.textAlign = 'right'; ctx.fillStyle = ok ? '#ffd23f' : '#ff7a7a'; ctx.font = 'bold 15px Trebuchet MS,sans-serif'; ctx.fillText('💲' + a.cost, r.x + r.w - 14, r.y + r.h / 2);
+  }
+  ctx.textAlign = 'center'; ctx.textBaseline = 'alphabetic'; ctx.fillStyle = 'rgba(255,255,255,.7)'; ctx.font = '13px Trebuchet MS,sans-serif';
+  ctx.fillText(IS_TOUCH ? 'Торкнись тварини, щоб найняти · поза списком — вихід' : 'Клік по тварині · Esc/B — вихід', VIEW_W / 2, y + 64 + ANIMALS.length * 48 + 14);
+  ctx.textAlign = 'left'; ctx.textBaseline = 'alphabetic';
 }
 function drawSideQuest() {
   if (!sideQuest) return;
@@ -1592,7 +1672,8 @@ function drawShopPrompt() {
   ctx.fillStyle = 'rgba(20,40,28,.85)'; rr(btnShop.x, btnShop.y, btnShop.w, btnShop.h, 10); ctx.fill();
   ctx.strokeStyle = '#ffd23f'; ctx.lineWidth = 2; rr(btnShop.x, btnShop.y, btnShop.w, btnShop.h, 10); ctx.stroke();
   ctx.fillStyle = '#ffe08a'; ctx.font = 'bold 15px Trebuchet MS,sans-serif'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
-  ctx.fillText('🛒 Магазин' + (IS_TOUCH ? '' : ' (B)'), btnShop.x + btnShop.w / 2, btnShop.y + btnShop.h / 2);
+  const label = (nearHome || nearShopTown) ? '🛒 Магазин' : '🐾 Найманці';
+  ctx.fillText(label + (IS_TOUCH ? '' : ' (B)'), btnShop.x + btnShop.w / 2, btnShop.y + btnShop.h / 2);
   ctx.textAlign = 'left'; ctx.textBaseline = 'alphabetic';
 }
 function drawShop() {
