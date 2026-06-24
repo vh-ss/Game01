@@ -776,7 +776,7 @@ const STICK_R = 52;
 const tMove = { id: null, ox: 0, oy: 0, x: 0, y: 0, active: false, mx: 0, my: 0 };
 const tFire = { id: null, active: false };
 const fireBtn = { r: 54, get x() { return VIEW_W - 86; }, get y() { return VIEW_H - 86; } };   // big round fire button (bottom-right)
-const btnPause = { y: 48, w: 40, h: 32, get x() { return VIEW_W - 50; } };
+const btnPause = { y: 48, w: 58, h: 46, get x() { return VIEW_W - 70; } };
 const btnShop = { x: 10, y: 100, w: 120, h: 34 };   // appears near home on mobile
 const btnCar = { x: 10, y: 140, w: 130, h: 34 };    // appears near a car / when driving
 const btnBuild = { x: 10, y: 180, w: 130, h: 34 };  // build barricade (mobile)
@@ -1466,8 +1466,8 @@ function drawTouchUI() {
   ctx.fillStyle = '#fff'; ctx.font = 'bold 16px Calibri'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
   ctx.fillText('ВОГОНЬ', fireBtn.x, fireBtn.y); ctx.textBaseline = 'alphabetic';
   // pause button
-  ctx.fillStyle = 'rgba(0,0,0,0.35)'; rr(btnPause.x, btnPause.y, btnPause.w, btnPause.h, 6); ctx.fill();
-  ctx.fillStyle = '#fff'; ctx.font = 'bold 16px Calibri'; ctx.fillText(state === 'paused' ? '▶' : '⏸', btnPause.x + btnPause.w / 2, btnPause.y + btnPause.h / 2 + 1);
+  ctx.fillStyle = 'rgba(0,0,0,0.35)'; rr(btnPause.x, btnPause.y, btnPause.w, btnPause.h, 9); ctx.fill();
+  ctx.fillStyle = '#fff'; ctx.font = 'bold 26px Calibri'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle'; ctx.fillText(state === 'paused' ? '▶' : '⏸', btnPause.x + btnPause.w / 2, btnPause.y + btnPause.h / 2 + 1); ctx.textBaseline = 'alphabetic';
   ctx.textAlign = 'left'; ctx.textBaseline = 'alphabetic';
   ctx.restore();
 }
