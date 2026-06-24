@@ -7,7 +7,13 @@ function codeSeed(s) { let h = 2166136261; for (let i = 0; i < s.length; i++) { 
 let GENSEED = coop ? codeSeed(coop.code) : (Math.floor(Math.random() * 1e9) >>> 0);
 function R() { GENSEED = (GENSEED * 1103515245 + 12345) & 0x7fffffff; return GENSEED / 0x7fffffff; }
 const LEVEL = genWorld(GENSEED);   // procedural town (deterministic by seed)
-let district = 1; try { district = Math.max(1, +(sessionStorage.getItem('punktown_district') || 1)); } catch (e) {}
+// Continue to the next district ONLY if we arrived via the "Наступний район" button
+// (it sets the continue flag). Any other load (reload, after-update) = fresh new game.
+let district = 1;
+try {
+  if (sessionStorage.getItem('punktown_continue') === '1') { sessionStorage.removeItem('punktown_continue'); district = Math.max(1, +(sessionStorage.getItem('punktown_district') || 1)); }
+  else { sessionStorage.removeItem('punktown_district'); sessionStorage.removeItem('punktown_carry'); district = 1; }
+} catch (e) {}
 const HPBONUS = district - 1;   // tougher zombies in later districts
 let VIEW_W = window.innerWidth, VIEW_H = window.innerHeight, DPR = Math.min(window.devicePixelRatio || 1, 2);
 const TS = LEVEL.tileSize;
@@ -558,10 +564,10 @@ function showEndScreen() {
   const btn = document.getElementById('againBtn');
   if (state === 'win') {
     t.textContent = '🎉 РАЙОН ' + district + ' ЗАЧИЩЕНО!'; t.className = 'win'; p.textContent = (captiveMale ? 'Чоловіка' : 'Жінку') + ' врятовано, боса повалено!' + stat;
-    btn.textContent = '➜ Наступний район'; btn.onclick = () => { saveCarry(); try { sessionStorage.setItem('punktown_district', district + 1); } catch (e) {} location.reload(); };
+    btn.textContent = '➜ Наступний район'; btn.onclick = () => { saveCarry(); try { sessionStorage.setItem('punktown_continue', '1'); sessionStorage.setItem('punktown_district', district + 1); } catch (e) {} location.reload(); };
   } else {
     t.textContent = '☠ КІНЕЦЬ ГРИ'; t.className = 'lose'; p.textContent = (failReason || 'Тебе здолали.') + ' · Дійшов до району ' + district + stat;
-    btn.textContent = '↺ Почати з 1 району'; btn.onclick = () => { try { sessionStorage.setItem('punktown_district', 1); } catch (e) {} location.reload(); };
+    btn.textContent = '↺ Почати з 1 району'; btn.onclick = () => { try { sessionStorage.removeItem('punktown_continue'); sessionStorage.removeItem('punktown_district'); sessionStorage.removeItem('punktown_carry'); } catch (e) {} location.reload(); };
   }
   $end.classList.remove('hidden');
 }
