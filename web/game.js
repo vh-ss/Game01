@@ -345,7 +345,7 @@ function updatePets(dt, combat) {
     if (combat) {
       for (const z of zombies) { if (z.dead || z.hidden) continue; const zdx = z.x + z.w / 2 - pcx, zdy = z.y + z.h / 2 - pcy; if (zdx * zdx + zdy * zdy < 24 * 24) { p.hp -= (z.ztype === 'tank' ? 16 : 9) * dt; } }   // zombies bite the pet when close (not only on full overlap)
       if (p.hp <= 0) { spawnBurst(pcx, pcy, '#c0392b', 12, 120, 3); showToast(a.icon + ' ' + a.name + ' загинув'); pets.splice(i, 1); continue; }
-      if (p.hp < a.maxhp) for (const hm of homes) if (aabb(p.x, p.y, p.w, p.h, hm.x - 16, hm.y - 40, 128, 112)) p.hp = Math.min(a.maxhp, p.hp + 30 * dt);
+      if (p.hp < a.hp) for (const hm of homes) if (aabb(p.x, p.y, p.w, p.h, hm.x - 16, hm.y - 40, 128, 112)) p.hp = Math.min(a.hp, p.hp + 30 * dt);
     }
   }
 }
@@ -1067,6 +1067,7 @@ function update(dt) {
     let dead = b.life <= 0 || boxSolid(b.x - 1, b.y - 1, 2, 2) || b.x < 0 || b.x > LW || b.y < 0 || b.y > LH;
     if (!dead && aabb(player.x, player.y, player.w, player.h, b.x - 2, b.y - 2, 4, 4)) { if (driving) { carHp -= b.dmg; if (carHp <= 0) { exitCar(); announce('🚗 Машина розбита!'); } } else if (invuln <= 0) hurt(b.dmg); dead = true; }
     if (!dead && player2 && player2.active && !player2.dead && player2.invuln <= 0 && aabb(player2.x, player2.y, player2.w, player2.h, b.x - 2, b.y - 2, 4, 4)) { player2.health -= b.dmg; player2.invuln = 0.4; player2.flash = 0.14; if (player2.health <= 0) { player2.dead = true; player2.respawnT = 2.5; } dead = true; }
+    if (!dead) for (let pi = pets.length - 1; pi >= 0; pi--) { const pe = pets[pi]; if (aabb(pe.x, pe.y, pe.w, pe.h, b.x - 2, b.y - 2, 4, 4)) { pe.hp -= b.dmg; spawnBurst(pe.x + 8, pe.y + 7, '#c0392b', 5, 80, 2); if (pe.hp <= 0) { spawnBurst(pe.x + 8, pe.y + 7, '#c0392b', 12, 120, 3); showToast(ANIMALS[pe.type].icon + ' ' + ANIMALS[pe.type].name + ' загинув'); pets.splice(pi, 1); } dead = true; break; } }
     if (dead) { if (b.owner) b.owner.hasBullet = false; eBullets.splice(i, 1); }
   }
 
@@ -1631,7 +1632,7 @@ function drawPetsHUD() {
     const a = ANIMALS[p.type];
     ctx.fillStyle = 'rgba(12,18,12,0.7)'; rr(x0, y0, 76, 17, 6); ctx.fill();
     ctx.font = '14px Calibri'; ctx.textAlign = 'left'; ctx.textBaseline = 'middle'; ctx.fillStyle = '#fff'; ctx.fillText(a.icon, x0 + 4, y0 + 9);
-    ctx.fillStyle = 'rgba(0,0,0,.5)'; ctx.fillRect(x0 + 26, y0 + 6, 44, 5); ctx.fillStyle = p.hp > a.maxhp * 0.3 ? '#7fe07f' : '#ff6f6f'; ctx.fillRect(x0 + 26, y0 + 6, 44 * Math.max(0, p.hp) / a.maxhp, 5);
+    ctx.fillStyle = 'rgba(0,0,0,.5)'; ctx.fillRect(x0 + 26, y0 + 6, 44, 5); ctx.fillStyle = p.hp > a.hp * 0.3 ? '#7fe07f' : '#ff6f6f'; ctx.fillRect(x0 + 26, y0 + 6, 44 * Math.max(0, p.hp) / a.hp, 5);
     y0 += 21;
   }
   ctx.textAlign = 'left'; ctx.textBaseline = 'alphabetic';
@@ -1643,7 +1644,7 @@ function drawPets() {
     ctx.fillStyle = 'rgba(0,0,0,.25)'; ctx.beginPath(); ctx.ellipse(sx, sy + 7, 8, 3, 0, 0, 7); ctx.fill();
     ctx.fillStyle = '#fff'; ctx.font = '18px Calibri'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';   // opaque so the emoji isn't tinted by the shadow colour
     ctx.fillText(a.icon, sx, sy - 1 + Math.sin(p.bob * 8) * 1.2);
-    if (p.hp < a.maxhp) { ctx.fillStyle = 'rgba(0,0,0,.5)'; ctx.fillRect(sx - 9, sy - 11, 18, 3); ctx.fillStyle = '#7fe07f'; ctx.fillRect(sx - 9, sy - 11, 18 * Math.max(0, p.hp) / a.maxhp, 3); }
+    if (p.hp < a.hp) { ctx.fillStyle = 'rgba(0,0,0,.5)'; ctx.fillRect(sx - 9, sy - 11, 18, 3); ctx.fillStyle = '#7fe07f'; ctx.fillRect(sx - 9, sy - 11, 18 * Math.max(0, p.hp) / a.hp, 3); }
     ctx.textAlign = 'left'; ctx.textBaseline = 'alphabetic';
   }
 }
