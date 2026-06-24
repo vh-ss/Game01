@@ -321,10 +321,11 @@ function buyPet(i) {
   if (pets.length >= MAX_PETS) { AUDIO.sfx.hurt(); showToast('Уже маєш ' + MAX_PETS + ' тварин'); return; }
   if (totalCoins < a.cost) { AUDIO.sfx.hurt(); showToast('Замало монет (' + a.cost + ')'); return; }
   totalCoins -= a.cost;
-  pets.push({ x: player.x + (Math.random() * 40 - 20), y: player.y + 24, w: 16, h: 14, type: i, hp: a.hp, maxhp: a.hp, fireCD: 0, aimx: 1, aimy: 0, bob: Math.random() * 6 });
+  pets.push({ x: player.x + (Math.random() * 40 - 20), y: player.y + 24, w: 16, h: 14, type: i, hp: a.hp, maxhp: a.hp, fireCD: 0, aimx: 1, aimy: 0, bob: Math.random() * 6, orbit: pets.length * (6.283 / MAX_PETS) });
   AUDIO.sfx.win(); showToast(a.icon + ' ' + a.name + ' приєднався!');
 }
 function updatePets(dt, combat) {
+  petPhase += dt * 1.3;   // pets run around the player in a circle
   for (let i = pets.length - 1; i >= 0; i--) {
     const p = pets[i], a = ANIMALS[p.type];
     p.bob += dt;
@@ -339,7 +340,7 @@ function updatePets(dt, combat) {
       if (a.atk === 'ranged') { if (d > a.range) { mx = p.aimx; my = p.aimy; } if (p.fireCD <= 0 && d < a.range) { bullets.push({ x: pcx, y: pcy, vx: p.aimx * 520, vy: p.aimy * 520, life: 0.9, dmg: a.dmg, color: '#cfe0ff' }); p.fireCD = a.rate; } }
       else { if (d > a.range) { mx = p.aimx; my = p.aimy; } else if (p.fireCD <= 0) { damageZombie(tgt, a.dmg, p.aimx, p.aimy); spawnBurst(zx, zy, '#ffd0d0', 4, 70, 2); p.fireCD = a.rate; } }
     }
-    if (!tgt || distToP > 150) { if (distToP > 52) { mx = (plx - pcx) / distToP; my = (ply - pcy) / distToP; } else if (!tgt) { mx = my = 0; } }
+    if (!tgt || distToP > 150) { const ang = p.orbit + petPhase, R = 42, ox = plx + Math.cos(ang) * R, oy = ply + Math.sin(ang) * R, dx = ox - pcx, dy = oy - pcy, dd = Math.hypot(dx, dy) || 1; if (dd > 5) { mx = dx / dd; my = dy / dd; } else { mx = my = 0; } }
     if (mx || my) { const m = Math.hypot(mx, my) || 1; tryMove(p, mx / m * a.speed * dt, my / m * a.speed * dt); }
     if (combat) {
       for (const z of zombies) { if (z.dead || z.hidden) continue; if (aabb(p.x, p.y, p.w, p.h, z.x, z.y, z.w, z.h)) { p.hp -= (z.ztype === 'tank' ? 14 : 8) * dt; } }
@@ -359,6 +360,7 @@ function triggerEvent() {
 }
 const SHOP = [
   { label: '❤ Аптечка — повне HP', cost: () => 4, buy: () => { health = maxHealth; } },
+  { label: '🩹 Аптечка в запас (макс 3)', cost: () => 5, buy: () => { if (medkits >= MAX_MED) return false; medkits++; } },
   { label: '🔫 Повний боєзапас', cost: () => 6, buy: () => { for (let i = 0; i < WEAPONS.length; i++) if (owned[i]) { wAmmo[i] = WEAPONS[i].mag; if (WEAPONS[i].mag !== Infinity) reserve[i] = MAX_MAGS; } } },
   { label: '💪 Шкода +25%', cost: () => 12 + dmgLvl * 12, buy: () => { dmgMul += 0.25; dmgLvl++; } },
   { label: '⚡ Швидкість +12%', cost: () => 10 + spdLvl * 10, buy: () => { spdMul += 0.12; spdLvl++; } },
@@ -366,7 +368,7 @@ const SHOP = [
   { label: '🔓 Випадкова зброя', cost: () => 20, buy: () => { const lk = [2, 3, 4, 5].filter(i => !owned[i]); if (lk.length) { const wi = lk[Math.floor(Math.random() * lk.length)]; owned[wi] = true; wAmmo[wi] = WEAPONS[wi].mag; } } },
 ];
 function shopRowRect(i) { const w = 380, x = VIEW_W / 2 - w / 2, y = VIEW_H / 2 - 130 + 70 + i * 42; return { x, y, w, h: 36 }; }
-function buyItem(i) { const it = SHOP[i]; if (!it) return; const c = it.cost(); if (totalCoins >= c) { totalCoins -= c; it.buy(); AUDIO.sfx.pickup(); showToast('Куплено: ' + it.label); } else { AUDIO.sfx.hurt(); showToast('Замало монет (' + c + ')'); } }
+function buyItem(i) { const it = SHOP[i]; if (!it) return; const c = it.cost(); if (totalCoins >= c) { totalCoins -= c; const r = it.buy(); if (r === false) { totalCoins += c; AUDIO.sfx.hurt(); showToast('Максимум аптечок (' + MAX_MED + ')'); return; } AUDIO.sfx.pickup(); showToast('Куплено: ' + it.label); } else { AUDIO.sfx.hurt(); showToast('Замало монет (' + c + ')'); } }
 let endShown = false;
 const $title = document.getElementById('titleScreen'), $end = document.getElementById('endScreen');
 const reachCells = (LEVEL.reach || []).filter(([c, r]) => r >= 0 && r < ROWS && c >= 0 && c < COLS && !solid[r][c]);
@@ -389,7 +391,7 @@ function questSpot(minFromPlayer) {
   const ks = questSpot(640); keyItem = { x: ks[0] + 6, y: ks[1] + 6, got: false };
   quests.push({ type: 'key', label: 'Знайти ключ' });
   const hsp = questSpot(900); lockedHouse = { x: hsp[0], y: hsp[1], fire: 0, burnT: 0 };
-  woman = { x: hsp[0] + 38, y: hsp[1] + 60, w: 18, h: 22, hp: 40, maxhp: 40, flash: 0, invuln: 0, frame: 0, walkT: 0, active: false, weapon: null, ammo: 0, fireCD: 0, aimx: 1, aimy: 0 };
+  woman = { x: hsp[0], y: hsp[1], w: 18, h: 22, hp: 40, maxhp: 40, flash: 0, invuln: 0, frame: 0, walkT: 0, active: false, weapon: null, ammo: 0, fireCD: 0, aimx: 1, aimy: 0 };
   quests.push({ type: 'rescue', label: 'Врятувати жінку' });
   const bs = questSpot(700); boss = mkZombie(bs[0], bs[1]); boss.isBoss = true; boss.hp = 24; boss.maxhp = 24; boss.w = 30; boss.h = 34; boss.name = BOSS_NAMES[ri(BOSS_NAMES.length)]; boss.armed = true; boss.zw = 1; zombies.push(boss);
   quests.push({ type: 'boss', label: 'Здолати боса' });
@@ -490,6 +492,19 @@ function checkQuests() {
 }
 let curW = 0; const owned = WEAPONS.map((w, i) => i < 2); const wAmmo = WEAPONS.map(w => w.mag);   // start with pistol + bat
 const MAX_MAGS = 3; const reserve = WEAPONS.map((w, i) => i === 0 ? 1 : 0);   // spare magazines per weapon (0..3)
+let medkits = 0; const MAX_MED = 3; let petPhase = 0;
+// carry money, weapons, upgrades, pets & medkits to the next district
+function saveCarry() { try { sessionStorage.setItem('punktown_carry', JSON.stringify({ coins: totalCoins, owned, wAmmo, reserve, curW, medkits, dmgMul, spdMul, maxHealth, dmgLvl, spdLvl, hpLvl, pets: pets.map(p => p.type) })); } catch (e) {} }
+function useMedkit() { if (state !== 'play' || medkits <= 0 || health >= maxHealth) { if (medkits <= 0) showToast('Немає аптечок'); return; } medkits--; health = Math.min(maxHealth, health + 70); AUDIO.sfx.pickup(); showToast('🩹 +HP'); for (let i = 0; i < 8; i++) particles.push({ x: player.x + 9 + (Math.random() * 20 - 10), y: player.y + player.h, vx: Math.random() * 16 - 8, vy: -28, life: 0.6, max: 0.6, color: '#7dff9a', size: 3, grav: -10 }); }
+(function loadCarry() {
+  if (district <= 1) { try { sessionStorage.removeItem('punktown_carry'); } catch (e) {} return; }
+  let c = null; try { c = JSON.parse(sessionStorage.getItem('punktown_carry') || 'null'); } catch (e) {}
+  if (!c) return;
+  totalCoins = c.coins || 0; coinsTotal = totalCoins; medkits = c.medkits || 0; curW = c.curW || 0;
+  for (let i = 0; i < WEAPONS.length; i++) { if (c.owned && c.owned[i]) owned[i] = true; if (c.wAmmo && c.wAmmo[i] != null) wAmmo[i] = c.wAmmo[i]; if (c.reserve && c.reserve[i] != null) reserve[i] = c.reserve[i]; }
+  dmgMul = c.dmgMul || 1; spdMul = c.spdMul || 1; maxHealth = c.maxHealth || 100; health = maxHealth; dmgLvl = c.dmgLvl || 0; spdLvl = c.spdLvl || 0; hpLvl = c.hpLvl || 0;
+  for (const t of (c.pets || [])) if (pets.length < MAX_PETS && ANIMALS[t]) pets.push({ x: player.x + (Math.random() * 40 - 20), y: player.y + 24, w: 16, h: 14, type: t, hp: ANIMALS[t].hp, maxhp: ANIMALS[t].hp, fireCD: 0, aimx: 1, aimy: 0, bob: Math.random() * 6, orbit: Math.random() * 6.283 });
+})();
 const bullets = [], eBullets = [], loot = [], particles = [];
 let fireCD = 0, hurtFlash = 0, shakeT = 0, invuln = 0, hitCD = 0, healT = 0, dustT = 0, shareCD = 0;
 let toast = '', toastT = 0, speech = '', speechT = 0; const face = { x: 1, y: 0 };
@@ -509,6 +524,7 @@ addEventListener('keydown', e => {
   if (state === 'title' && (e.code === 'Space' || e.code === 'Enter')) startGame();
   else if ((state === 'win' || state === 'gameover') && e.code === 'KeyR') location.reload();
   else if (e.code === 'Space' && state === 'play') useAbility();
+  else if (e.code === 'KeyH' && state === 'play') useMedkit();
   else if (e.code === 'KeyE' && state === 'play') { if (driving) exitCar(); else if (nearVehicle) enterCar(nearVehicle); }
   else if (e.code === 'KeyC' && state === 'play') buildBarricade();
   else if (e.code === 'KeyB' && state === 'play' && (nearHome || nearShopTown)) { state = 'shop'; }
@@ -524,7 +540,7 @@ addEventListener('keydown', e => {
 addEventListener('keyup', e => { keys[e.code] = false; });
 const mouse = { x: VIEW_W / 2, y: VIEW_H / 2, down: false, moved: false };
 canvas.addEventListener('mousemove', e => { const r = canvas.getBoundingClientRect(); mouse.x = e.clientX - r.left; mouse.y = e.clientY - r.top; mouse.moved = true; });
-canvas.addEventListener('mousedown', () => { canvas.focus(); if (state === 'title') { startGame(); return; } if (state === 'shop') { for (let i = 0; i < SHOP.length; i++) { const r = shopRowRect(i); if (mouse.x >= r.x && mouse.x <= r.x + r.w && mouse.y >= r.y && mouse.y <= r.y + r.h) { buyItem(i); return; } } const sb = skinsBtnRect(); if (mouse.x >= sb.x && mouse.x <= sb.x + sb.w && mouse.y >= sb.y && mouse.y <= sb.y + sb.h) state = 'skins'; return; } if (state === 'skins') { for (let i = 0; i < activeSkins().length; i++) { const r = skinRect(i); if (mouse.x >= r.x && mouse.x <= r.x + r.w && mouse.y >= r.y && mouse.y <= r.y + r.h) { buyOrEquipSkin(i); return; } } state = 'shop'; return; } if (state === 'merc') { for (let i = 0; i < ANIMALS.length; i++) { const r = mercRowRect(i); if (mouse.x >= r.x && mouse.x <= r.x + r.w && mouse.y >= r.y && mouse.y <= r.y + r.h) { buyPet(i); return; } } state = 'play'; return; } if (state !== 'play') return; if (inAbil(mouse.x, mouse.y)) { useAbility(); return; } if (inQuestPanel(mouse.x, mouse.y)) { questsCollapsed = !questsCollapsed; return; } const wi = weaponSlotAt(mouse.x, mouse.y); if (wi >= 0) { if (owned[wi]) curW = wi; return; } mouse.down = true; });
+canvas.addEventListener('mousedown', () => { canvas.focus(); if (state === 'title') { startGame(); return; } if (state === 'shop') { for (let i = 0; i < SHOP.length; i++) { const r = shopRowRect(i); if (mouse.x >= r.x && mouse.x <= r.x + r.w && mouse.y >= r.y && mouse.y <= r.y + r.h) { buyItem(i); return; } } const sb = skinsBtnRect(); if (mouse.x >= sb.x && mouse.x <= sb.x + sb.w && mouse.y >= sb.y && mouse.y <= sb.y + sb.h) state = 'skins'; return; } if (state === 'skins') { for (let i = 0; i < activeSkins().length; i++) { const r = skinRect(i); if (mouse.x >= r.x && mouse.x <= r.x + r.w && mouse.y >= r.y && mouse.y <= r.y + r.h) { buyOrEquipSkin(i); return; } } state = 'shop'; return; } if (state === 'merc') { for (let i = 0; i < ANIMALS.length; i++) { const r = mercRowRect(i); if (mouse.x >= r.x && mouse.x <= r.x + r.w && mouse.y >= r.y && mouse.y <= r.y + r.h) { buyPet(i); return; } } state = 'play'; return; } if (state !== 'play') return; if (inAbil(mouse.x, mouse.y)) { useAbility(); return; } if (inMed(mouse.x, mouse.y)) { useMedkit(); return; } if (inQuestPanel(mouse.x, mouse.y)) { questsCollapsed = !questsCollapsed; return; } const wi = weaponSlotAt(mouse.x, mouse.y); if (wi >= 0) { if (owned[wi]) curW = wi; return; } mouse.down = true; });
 
 // hero picker on the title screen
 { const btns = document.querySelectorAll('#heroPick .hero');
@@ -542,7 +558,7 @@ function showEndScreen() {
   const btn = document.getElementById('againBtn');
   if (state === 'win') {
     t.textContent = '🎉 РАЙОН ' + district + ' ЗАЧИЩЕНО!'; t.className = 'win'; p.textContent = (captiveMale ? 'Чоловіка' : 'Жінку') + ' врятовано, боса повалено!' + stat;
-    btn.textContent = '➜ Наступний район'; btn.onclick = () => { try { sessionStorage.setItem('punktown_district', district + 1); } catch (e) {} location.reload(); };
+    btn.textContent = '➜ Наступний район'; btn.onclick = () => { saveCarry(); try { sessionStorage.setItem('punktown_district', district + 1); } catch (e) {} location.reload(); };
   } else {
     t.textContent = '☠ КІНЕЦЬ ГРИ'; t.className = 'lose'; p.textContent = (failReason || 'Тебе здолали.') + ' · Дійшов до району ' + district + stat;
     btn.textContent = '↺ Почати з 1 району'; btn.onclick = () => { try { sessionStorage.setItem('punktown_district', 1); } catch (e) {} location.reload(); };
@@ -765,6 +781,8 @@ const btnShop = { x: 10, y: 100, w: 120, h: 34 };   // appears near home on mobi
 const btnCar = { x: 10, y: 140, w: 130, h: 34 };    // appears near a car / when driving
 const btnBuild = { x: 10, y: 180, w: 130, h: 34 };  // build barricade (mobile)
 const abilBtn = { r: 36, get x() { return VIEW_W - 168; }, get y() { return VIEW_H - 96; } };   // special-ability button (left of fire)
+const medBtn = { r: 30, get x() { return VIEW_W - 150; }, get y() { return VIEW_H - 178; } };   // medkit button (above ability)
+const inMed = (x, y) => Math.hypot(x - medBtn.x, y - medBtn.y) <= medBtn.r + 10;
 const inBtn = (b, x, y) => x >= b.x && x <= b.x + b.w && y >= b.y && y <= b.y + b.h;
 const inFire = (x, y) => Math.hypot(x - fireBtn.x, y - fireBtn.y) <= fireBtn.r + 12;
 const inAbil = (x, y) => Math.hypot(x - abilBtn.x, y - abilBtn.y) <= abilBtn.r + 10;
@@ -797,6 +815,7 @@ canvas.addEventListener('touchstart', e => {
     if ((nearVehicle || driving) && inBtn(btnCar, x, y)) { if (driving) exitCar(); else enterCar(nearVehicle); continue; }
     if (!driving && inBtn(btnBuild, x, y)) { buildBarricade(); continue; }
     if (inAbil(x, y)) { useAbility(); continue; }
+    if (inMed(x, y)) { useMedkit(); continue; }
     if (inQuestPanel(x, y)) { questsCollapsed = !questsCollapsed; continue; }
     { const wi = weaponSlotAt(x, y); if (wi >= 0) { if (owned[wi]) curW = wi; continue; } }
     if (inFire(x, y) && tFire.id === null) { tFire.id = t.identifier; tFire.active = true; }
@@ -1068,7 +1087,7 @@ function update(dt) {
   // key pickup (either player)
   if (keyItem && !keyItem.got && eitherOver(keyItem.x - 6, keyItem.y - 6, 28, 28)) { keyItem.got = true; hasKey = true; AUDIO.sfx.pickup(); spawnBurst(keyItem.x + 6, keyItem.y + 6, '#ffd23f', 16, 140, 3); showToast('Знайдено ключ! Іди до будинку 🏚'); }
   // unlock the house with the key (either player)
-  if (hasKey && !womanFreed && lockedHouse && eitherOver(lockedHouse.x - 10, lockedHouse.y, 116, 110)) {
+  if (hasKey && !womanFreed && lockedHouse && eitherOver(lockedHouse.x - 40, lockedHouse.y - 36, 176, 168)) {   // generous zone so the house is always openable
     womanFreed = true; woman.active = true; AUDIO.sfx.pickup(); spawnBurst(lockedHouse.x + 48, lockedHouse.y + 60, '#ffd23f', 20, 160, 3); say('Дякую, що ' + (hero === 'female' ? 'відчинила' : 'відчинив') + '! Прикрий мене — і веди ДОДОМУ, будь ласка.');
   }
   // woman: follow, take damage, escort, or die
@@ -1398,7 +1417,7 @@ function draw() {
     else if (sideQuest.kind === 'reach') drawPointer(sideQuest.dx, sideQuest.dy, '🏁', '#b89cff');
     else if (sideQuest.kind === 'bounty' && sideQuest.target && !sideQuest.target.dead) drawPointer(sideQuest.target.x + 13, sideQuest.target.y, '🎯 ЦІЛЬ', '#ff5a4a');
   }
-  drawHUD(); drawQuests(); drawSideQuest(); drawWeaponBar(); drawSpeech(); drawMinimap();
+  drawHUD(); drawQuests(); drawSideQuest(); drawWeaponBar(); drawSpeech(); drawMinimap(); drawPetsHUD();
   if (state === 'play' && (nearHome || nearShopTown || nearMerc)) drawShopPrompt();
   if (state === 'play' && (nearVehicle || driving)) drawCarPrompt();
   if (state === 'play' && IS_TOUCH && !driving) drawBuildPrompt();
@@ -1462,6 +1481,15 @@ function drawAbility() {
   ctx.fillText(fem ? '🤸' : '🛡', abilBtn.x, abilBtn.y);
   if (!ready) { ctx.strokeStyle = 'rgba(255,255,255,0.9)'; ctx.lineWidth = 4; ctx.beginPath(); ctx.arc(abilBtn.x, abilBtn.y, abilBtn.r - 1, -Math.PI / 2, -Math.PI / 2 + (1 - abilCD / ABIL_CD) * Math.PI * 2); ctx.stroke(); }
   else if (!IS_TOUCH) { ctx.fillStyle = 'rgba(255,255,255,0.85)'; ctx.font = '10px Calibri'; ctx.fillText('Пробіл', abilBtn.x, abilBtn.y + abilBtn.r + 9); }
+  // medkit button
+  const hasMed = medkits > 0;
+  ctx.beginPath(); ctx.arc(medBtn.x, medBtn.y, medBtn.r, 0, 7);
+  ctx.fillStyle = hasMed ? 'rgba(70,180,90,0.55)' : 'rgba(70,72,82,0.45)'; ctx.fill();
+  ctx.strokeStyle = hasMed ? '#fff' : 'rgba(255,255,255,0.4)'; ctx.lineWidth = 3; ctx.stroke();
+  ctx.fillStyle = '#fff'; ctx.font = '20px Calibri'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle'; ctx.fillText('🩹', medBtn.x, medBtn.y);
+  ctx.fillStyle = '#0c1a10'; ctx.beginPath(); ctx.arc(medBtn.x + medBtn.r - 4, medBtn.y - medBtn.r + 4, 9, 0, 7); ctx.fill();
+  ctx.fillStyle = hasMed ? '#9fe0a0' : '#888'; ctx.font = 'bold 12px Calibri'; ctx.fillText(medkits + '', medBtn.x + medBtn.r - 4, medBtn.y - medBtn.r + 5);
+  if (!IS_TOUCH) { ctx.fillStyle = 'rgba(255,255,255,0.85)'; ctx.font = '10px Calibri'; ctx.fillText('H', medBtn.x, medBtn.y + medBtn.r + 9); }
   ctx.textBaseline = 'alphabetic'; ctx.textAlign = 'left'; ctx.restore();
 }
 
@@ -1595,6 +1623,18 @@ function drawNPCs() {
     else { ctx.fillStyle = '#bfe0ff'; ctx.beginPath(); ctx.arc(ax, ay + 2, 2.4, 0, 7); ctx.fill(); }
     ctx.textAlign = 'left'; ctx.textBaseline = 'alphabetic';
   }
+}
+function drawPetsHUD() {
+  if (!pets.length) return;
+  const x0 = VIEW_W - 86; let y0 = 86 + Math.round(150 * LH / LW) + (minimapOn ? 14 : 0);
+  for (const p of pets) {
+    const a = ANIMALS[p.type];
+    ctx.fillStyle = 'rgba(12,18,12,0.7)'; rr(x0, y0, 76, 17, 6); ctx.fill();
+    ctx.font = '14px Calibri'; ctx.textAlign = 'left'; ctx.textBaseline = 'middle'; ctx.fillStyle = '#fff'; ctx.fillText(a.icon, x0 + 4, y0 + 9);
+    ctx.fillStyle = 'rgba(0,0,0,.5)'; ctx.fillRect(x0 + 26, y0 + 6, 44, 5); ctx.fillStyle = p.hp > a.maxhp * 0.3 ? '#7fe07f' : '#ff6f6f'; ctx.fillRect(x0 + 26, y0 + 6, 44 * Math.max(0, p.hp) / a.maxhp, 5);
+    y0 += 21;
+  }
+  ctx.textAlign = 'left'; ctx.textBaseline = 'alphabetic';
 }
 function drawPets() {
   for (const p of pets) {
