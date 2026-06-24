@@ -343,7 +343,7 @@ function updatePets(dt, combat) {
     if (!tgt || distToP > 150) { const ang = p.orbit + petPhase, R = 42, ox = plx + Math.cos(ang) * R, oy = ply + Math.sin(ang) * R, dx = ox - pcx, dy = oy - pcy, dd = Math.hypot(dx, dy) || 1; if (dd > 5) { mx = dx / dd; my = dy / dd; } else { mx = my = 0; } }
     if (mx || my) { const m = Math.hypot(mx, my) || 1; tryMove(p, mx / m * a.speed * dt, my / m * a.speed * dt); }
     if (combat) {
-      for (const z of zombies) { if (z.dead || z.hidden) continue; if (aabb(p.x, p.y, p.w, p.h, z.x, z.y, z.w, z.h)) { p.hp -= (z.ztype === 'tank' ? 14 : 8) * dt; } }
+      for (const z of zombies) { if (z.dead || z.hidden) continue; const zdx = z.x + z.w / 2 - pcx, zdy = z.y + z.h / 2 - pcy; if (zdx * zdx + zdy * zdy < 24 * 24) { p.hp -= (z.ztype === 'tank' ? 16 : 9) * dt; } }   // zombies bite the pet when close (not only on full overlap)
       if (p.hp <= 0) { spawnBurst(pcx, pcy, '#c0392b', 12, 120, 3); showToast(a.icon + ' ' + a.name + ' загинув'); pets.splice(i, 1); continue; }
       if (p.hp < a.maxhp) for (const hm of homes) if (aabb(p.x, p.y, p.w, p.h, hm.x - 16, hm.y - 40, 128, 112)) p.hp = Math.min(a.maxhp, p.hp + 30 * dt);
     }
@@ -1637,10 +1637,11 @@ function drawPetsHUD() {
   ctx.textAlign = 'left'; ctx.textBaseline = 'alphabetic';
 }
 function drawPets() {
+  ctx.globalAlpha = 1; ctx.globalCompositeOperation = 'source-over';   // ensure pets aren't faded by leaked alpha/blend
   for (const p of pets) {
     const a = ANIMALS[p.type], sx = Math.round(p.x + 8 - cam.x), sy = Math.round(p.y + 7 - cam.y);
     ctx.fillStyle = 'rgba(0,0,0,.25)'; ctx.beginPath(); ctx.ellipse(sx, sy + 7, 8, 3, 0, 0, 7); ctx.fill();
-    ctx.font = '18px Calibri'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+    ctx.fillStyle = '#fff'; ctx.font = '18px Calibri'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';   // opaque so the emoji isn't tinted by the shadow colour
     ctx.fillText(a.icon, sx, sy - 1 + Math.sin(p.bob * 8) * 1.2);
     if (p.hp < a.maxhp) { ctx.fillStyle = 'rgba(0,0,0,.5)'; ctx.fillRect(sx - 9, sy - 11, 18, 3); ctx.fillStyle = '#7fe07f'; ctx.fillRect(sx - 9, sy - 11, 18 * Math.max(0, p.hp) / a.maxhp, 3); }
     ctx.textAlign = 'left'; ctx.textBaseline = 'alphabetic';
