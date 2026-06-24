@@ -75,7 +75,7 @@ function mkZombie(x, y) {
   else if (r < 0.30) { ztype = 'tank'; hp = 14; w = 26; h = 30; sm = 0.6; armable = false; }
   else if (r < 0.42) { ztype = 'exploder'; hp = 3; w = 18; h = 22; sm = 1.1; armable = false; }
   const armed = armable && Math.random() < ARMED_CHANCE;
-  hp += HPBONUS;
+  hp = (hp + HPBONUS) * 2;   // ×2 base toughness
   return { x, y, w, h, vx: 0, vy: 0, t: 0, hp, maxhp: hp, flash: 0, frame: 0, ztype, sm,
     armed, zw: armed ? Math.floor(Math.random() * ZWEAPONS.length) : 0,
     shootCD: 0.6 + Math.random() * 2, hasBullet: false, aimx: 1, aimy: 0 };
@@ -115,6 +115,7 @@ let health = 100, lives = 3, totalCoins = 0, kills = 0, state = 'title', stamina
 let combo = 0, comboT = 0, score = 0, coinsTotal = 0; let best = 0; try { best = +(localStorage.getItem('punktown_best') || 0); } catch (e) {}
 let dmgMul = 1, spdMul = 1, maxHealth = 100, dmgLvl = 0, spdLvl = 0, hpLvl = 0, nearHome = false;
 const DAYCYCLE = 140; let nightF = 0;   // 0 = day, 1 = deep night
+const zPow = () => 2 * (1 + nightF);    // zombie strength: ×2 by day, ×4 at deep night
 let eventT = 35 + Math.random() * 30, eventMsg = '', eventMsgT = 0, supplyMarker = null;
 let minimapOn = true;
 // ---- hero choice & special abilities ----
@@ -850,7 +851,7 @@ function deathFx(z) {
   else if (z.ztype === 'exploder') {                    // blows up on death — chains & hurts player
     spawnBurst(z.x + 9, z.y + 11, '#ff7a1a', 26, 240, 4); spawnBurst(z.x + 9, z.y + 11, '#ffd23f', 12, 180, 3); shakeT = Math.max(shakeT, 0.28);
     const ex = z.x + z.w / 2, ey = z.y + z.h / 2, R = 72;
-    if (Math.hypot(player.x + 9 - ex, player.y + 11 - ey) < R) hurt(26);
+    if (Math.hypot(player.x + 9 - ex, player.y + 11 - ey) < R) hurt(Math.round(26 * zPow()));
     for (const o of zombies) { if (o !== z && !o.dead && !o.hidden && Math.hypot(o.x + o.w / 2 - ex, o.y + o.h / 2 - ey) < R) damageZombie(o, 6, 0, 0); }
   }
   else spawnBurst(z.x + 9, z.y + 11, '#8ec257', 16, 170, 3);
@@ -914,7 +915,8 @@ function respawnZombie() {
 // ================= UPDATE =================
 function update(dt) {
   animClock += dt;
-  nightF = (1 - Math.cos((animClock % DAYCYCLE) / DAYCYCLE * Math.PI * 2)) / 2;   // smooth day↔night
+  { const p = (animClock % DAYCYCLE) / DAYCYCLE, m = Math.min(p, 1 - p);   // day 80% / night 20% (night around the cycle edges)
+    const t = Math.max(0, Math.min(1, (m - 0.10) / 0.05)); nightF = 1 - t * t * (3 - 2 * t); }
   if (state !== 'play') return;
   dt = Math.min(dt, 0.033);
   if (coop && NET.role() === 'client') { updateClient(dt); return; }   // client only moves itself + sends input
@@ -1012,7 +1014,7 @@ function update(dt) {
       z.shootCD -= dt; const m = d || 1; z.aimx = (px - zx) / m; z.aimy = (py - zy) / m;
       const w = ZWEAPONS[z.zw];
       if (!z.hasBullet && z.shootCD <= 0 && d < 340) {
-        eBullets.push({ x: zx, y: zy, vx: z.aimx * w.speed, vy: z.aimy * w.speed, life: 1.8, dmg: w.dmg, color: w.color, owner: z });
+        eBullets.push({ x: zx, y: zy, vx: z.aimx * w.speed, vy: z.aimy * w.speed, life: 1.8, dmg: Math.round(w.dmg * zPow()), color: w.color, owner: z });
         z.hasBullet = true; z.shootCD = w.cd; AUDIO.sfx.eshoot(z.zw);
       }
     }
@@ -1029,12 +1031,12 @@ function update(dt) {
           } else if (totalCoins > 0) { totalCoins--; z.carrying++; showToast('Бандит вкрав монету! 💰'); stole = true; }
           hurt(8); z.stealCD = 1.0; if (stole) z.fleeT = 4.0;       // flee after a successful theft
         }
-      } else hurt(z.ztype === 'tank' ? 26 : 16);
+      } else hurt(Math.round((z.ztype === 'tank' ? 26 : 16) * zPow()));
     }
     if (player2 && player2.active && !player2.dead && !z.dead && aabb(player2.x, player2.y, player2.w, player2.h, z.x, z.y, z.w, z.h)) {
       if (player2.dr || player2.flipT > 0) damageZombie(z, 999, Math.sign(z.x - player2.x), Math.sign(z.y - player2.y));   // run over while driving / flip-charge
       else if (player2.invuln <= 0) {
-        player2.health -= z.ztype === 'tank' ? 22 : 14; player2.invuln = 0.5; player2.flash = 0.14; spawnBurst(player2.x + 9, player2.y + 11, '#9fd0ff', 5, 80, 2);
+        player2.health -= Math.round((z.ztype === 'tank' ? 22 : 14) * zPow()); player2.invuln = 0.5; player2.flash = 0.14; spawnBurst(player2.x + 9, player2.y + 11, '#9fd0ff', 5, 80, 2);
         if (player2.health <= 0) { player2.dead = true; player2.respawnT = 2.5; spawnBurst(player2.x + 9, player2.y + 11, '#ff5a4a', 14, 130, 3); }
       }
     }
