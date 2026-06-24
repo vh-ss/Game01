@@ -195,21 +195,63 @@ for (const tn of towns) {
   npcs.push({ x: tn.quest[0], y: tn.quest[1], bx: tn.quest[0], by: tn.quest[1], w: 18, h: 22, kind: 'quest', town: tn, frame: 0, walkT: 0, wanderT: 0, vx: 0, vy: 0, gave: false });
   (tn.villagers || []).forEach((v, i) => npcs.push({ x: v[0], y: v[1], bx: v[0], by: v[1], w: 18, h: 22, kind: 'villager', town: tn, fem: i % 2 === 0, frame: 0, walkT: 0, wanderT: i * 0.5, vx: 0, vy: 0 }));
 }
-let nearShopTown = null, nearQuestNPC = null, sideQuest = null, sideDone = 0;
-function offerQuest(npc) {
-  if (sideQuest || npc.gave) return;
-  if (Math.random() < 0.5) sideQuest = { kind: 'hunt', need: 6 + Math.floor(Math.random() * 7), reward: 10 + Math.floor(Math.random() * 10), base: kills, town: npc.town, npc };
-  else sideQuest = { kind: 'collect', need: 10 + Math.floor(Math.random() * 12), reward: 8 + Math.floor(Math.random() * 8), base: coinsTotal, town: npc.town, npc };
-  npc.gave = true; showToast('📜 ' + npc.town.name + ' дає завдання!'); AUDIO.sfx.pickup();
+let nearShopTown = null, nearQuestNPC = null, sideQuest = null, sideDone = 0, bountyKilled = false;
+const rint = n => Math.floor(Math.random() * n);
+function pickFarPoint(town, min, max) {
+  const cand = [];
+  for (const [c, r] of reachCells) { const wx = c * TS, wy = r * TS, d = Math.hypot(wx - town.x, wy - town.y); if (d > min && d < max) cand.push([wx, wy]); }
+  return cand.length ? cand[rint(cand.length)] : null;
 }
-function sideProgress() { return !sideQuest ? 0 : Math.max(0, (sideQuest.kind === 'hunt' ? kills : coinsTotal) - sideQuest.base); }
-function sideQuestText() { if (!sideQuest) return ''; const p = Math.min(sideProgress(), sideQuest.need); return (sideQuest.kind === 'hunt' ? '☠ Зомбі ' : '💰 Монети ') + p + '/' + sideQuest.need + '  →  +' + sideQuest.reward + '💰'; }
-function checkSideQuest() {
-  if (sideQuest && sideProgress() >= sideQuest.need) {
-    totalCoins += sideQuest.reward; coinsTotal += sideQuest.reward; score += sideQuest.reward * 5;
-    if (sideQuest.npc) sideQuest.npc.gave = false; sideDone++;
-    showToast('✅ Завдання виконано! +' + sideQuest.reward + '💰'); AUDIO.sfx.win(); sideQuest = null;
-  }
+function otherTown(town) { const o = towns.filter(t => t !== town); return o.length ? o[rint(o.length)] : { x: homes[0].x, y: homes[0].y, name: 'Дім' }; }
+function spawnBounty(town) {
+  const p = pickFarPoint(town, 220, 700) || [town.x + 260, town.y];
+  const z = mkZombie(p[0], p[1]);
+  z.bounty = true; z.ztype = 'tank'; z.w = 26; z.h = 30; z.sm = 0.95; z.armed = false; z.hp = z.maxhp = 55 + HPBONUS * 4; z.name = 'МУТАНТ';
+  zombies.push(z); return z;
+}
+function spawnHorde(town) {
+  for (let i = 0; i < 10; i++) { const a = Math.random() * 6.283, r = 120 + Math.random() * 130, x = town.x + Math.cos(a) * r, y = town.y + Math.sin(a) * r; if (!boxSolid(x, y, 18, 22)) zombies.push(mkZombie(x, y)); }
+  shakeT = Math.max(shakeT, 0.2);
+}
+function offerQuest(npc) {
+  if (sideQuest) return;
+  const isHost = !coop || NET.role() === 'host';
+  const pool = isHost ? ['hunt', 'collect', 'reach', 'deliver', 'bounty', 'defend'] : ['hunt', 'collect', 'reach', 'deliver'];
+  const kind = pool[rint(pool.length)];
+  const q = { kind, town: npc.town, npc, reward: 12 + rint(12) };
+  bountyKilled = false;
+  if (kind === 'hunt') { q.need = 6 + rint(7); q.base = kills; }
+  else if (kind === 'collect') { q.need = 10 + rint(12); q.base = coinsTotal; }
+  else if (kind === 'defend') { q.need = 8 + rint(6); q.base = kills; q.reward += 10; spawnHorde(npc.town); announce('🛡 Орда суне на ' + npc.town.name + '!'); }
+  else if (kind === 'reach') { const p = pickFarPoint(npc.town, 380, 1500) || [npc.town.x + 500, npc.town.y]; q.dx = p[0]; q.dy = p[1]; q.timeLeft = 16 + Math.round(Math.hypot(p[0] - player.x, p[1] - player.y) / 165); q.reward += 8; }
+  else if (kind === 'deliver') { const o = otherTown(npc.town); q.dx = o.x; q.dy = o.y; q.destName = o.name; q.reward += 6; }
+  else if (kind === 'bounty') { q.target = spawnBounty(npc.town); q.reward += 16; }
+  npc.gave = true; sideQuest = q;
+  showToast('📜 ' + npc.town.name + ': ' + sideQuestText()); AUDIO.sfx.pickup();
+}
+function sideQuestText() {
+  const q = sideQuest; if (!q) return '';
+  if (q.kind === 'hunt') return '☠ Убий зомбі ' + Math.min(kills - q.base, q.need) + '/' + q.need + ' → +' + q.reward + '💰';
+  if (q.kind === 'collect') return '💰 Збери монети ' + Math.min(coinsTotal - q.base, q.need) + '/' + q.need + ' → +' + q.reward + '💰';
+  if (q.kind === 'defend') return '🛡 Відбий орду ' + Math.min(kills - q.base, q.need) + '/' + q.need + ' → +' + q.reward + '💰';
+  if (q.kind === 'bounty') return '🎯 Вистеж і вбий Мутанта → +' + q.reward + '💰';
+  if (q.kind === 'deliver') return '📦 Доставка у «' + q.destName + '» → +' + q.reward + '💰';
+  if (q.kind === 'reach') return '🏃 Дістанься точки · ' + Math.max(0, Math.ceil(q.timeLeft)) + 'с → +' + q.reward + '💰';
+  return '';
+}
+function updateSideQuest(dt) {
+  const q = sideQuest; if (!q) return;
+  let done = false, fail = false;
+  if (q.kind === 'hunt' || q.kind === 'defend') done = (kills - q.base) >= q.need;
+  else if (q.kind === 'collect') done = (coinsTotal - q.base) >= q.need;
+  else if (q.kind === 'bounty') done = bountyKilled;
+  else if (q.kind === 'deliver') done = Math.hypot(player.x + 9 - q.dx, player.y + 11 - q.dy) < 60;
+  else if (q.kind === 'reach') { q.timeLeft -= dt; if (Math.hypot(player.x + 9 - q.dx, player.y + 11 - q.dy) < 60) done = true; else if (q.timeLeft <= 0) fail = true; }
+  if (done) {
+    totalCoins += q.reward; coinsTotal += q.reward; score += q.reward * 5; sideDone++;
+    if (q.npc) q.npc.gave = false;
+    showToast('✅ Завдання виконано! +' + q.reward + '💰'); AUDIO.sfx.win(); sideQuest = null;
+  } else if (fail) { if (q.npc) q.npc.gave = false; showToast('⌛ Не встиг — завдання провалено'); AUDIO.sfx.hurt(); sideQuest = null; }
 }
 function updateNPCs(dt) {
   nearShopTown = null; nearQuestNPC = null;
@@ -226,7 +268,7 @@ function updateNPCs(dt) {
     if (n.kind === 'shop' && d < 46) nearShopTown = n.town;
     if (n.kind === 'quest' && d < 46) { nearQuestNPC = n; if (!sideQuest) offerQuest(n); }
   }
-  checkSideQuest();
+  updateSideQuest(dt);
 }
 function triggerEvent() {
   const px = player.x, py = player.y;
@@ -716,6 +758,7 @@ function hurt(dmg) {
 let swingFx = 0, swingAng = 0;
 function deathFx(z) {
   if (z.dead) return; z.dead = true;
+  if (z.bounty) { bountyKilled = true; shakeT = Math.max(shakeT, 0.3); spawnBurst(z.x + 9, z.y + 11, '#ffd23f', 24, 200, 4); showToast('🎯 Ціль ліквідовано!'); }
   if (z.isBoss) { bossDead = true; shakeT = Math.max(shakeT, 0.4); spawnBurst(z.x + 15, z.y + 17, '#8ec257', 26, 220, 4); showToast('Боса повалено!'); }
   else if (z.crim) {
     spawnBurst(z.x + 9, z.y + 11, '#c0392b', 14, 160, 3);
@@ -1267,6 +1310,11 @@ function draw() {
   else if (womanFreed && !womanRescued) drawPointer(homes[0].x + 48, homes[0].y, 'ДОДОМУ', '#3fbf60');
   if (boss && !bossDead) drawPointer(boss.x + 15, boss.y, 'БОС', '#ff5a4a');
   if (supplyMarker) drawPointer(supplyMarker.x, supplyMarker.y, '📦', '#ffe08a');
+  if (sideQuest) {
+    if (sideQuest.kind === 'deliver') drawPointer(sideQuest.dx, sideQuest.dy, '📦 ' + sideQuest.destName, '#b89cff');
+    else if (sideQuest.kind === 'reach') drawPointer(sideQuest.dx, sideQuest.dy, '🏁', '#b89cff');
+    else if (sideQuest.kind === 'bounty' && sideQuest.target && !sideQuest.target.dead) drawPointer(sideQuest.target.x + 13, sideQuest.target.y, '🎯 ЦІЛЬ', '#ff5a4a');
+  }
   drawHUD(); drawQuests(); drawSideQuest(); drawWeaponBar(); drawSpeech(); drawMinimap();
   if (state === 'play' && (nearHome || nearShopTown)) drawShopPrompt();
   if (state === 'play' && (nearVehicle || driving)) drawCarPrompt();
@@ -1485,6 +1533,8 @@ function drawMinimap() {
   if (lockedHouse && !womanFreed) dot(lockedHouse.x + 48, lockedHouse.y + 48, '#9fd0e8', 3);
   if (woman && woman.active && !womanRescued) dot(woman.x, woman.y, '#ff9aa2', 2.5);
   if (supplyMarker) dot(supplyMarker.x, supplyMarker.y, '#ffe08a', 2.5);
+  if (sideQuest && (sideQuest.kind === 'deliver' || sideQuest.kind === 'reach')) dot(sideQuest.dx, sideQuest.dy, '#b89cff', 3);
+  if (sideQuest && sideQuest.kind === 'bounty' && sideQuest.target && !sideQuest.target.dead) dot(sideQuest.target.x, sideQuest.target.y, '#ff5a4a', 3);
   for (const tn of towns) { ctx.fillStyle = '#7fd0ff'; ctx.fillRect(mx + tn.x * sx - 2.5, my + tn.y * sy - 2.5, 5, 5); }   // towns
   ctx.fillStyle = '#fff'; ctx.beginPath(); ctx.arc(mx + (player.x + 9) * sx, my + (player.y + 11) * sy, 3, 0, 7); ctx.fill();
 }
