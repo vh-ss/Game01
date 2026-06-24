@@ -527,7 +527,7 @@ addEventListener('keydown', e => {
   else if (e.code === 'KeyH' && state === 'play') useMedkit();
   else if (e.code === 'KeyE' && state === 'play') { if (driving) exitCar(); else if (nearVehicle) enterCar(nearVehicle); }
   else if (e.code === 'KeyC' && state === 'play') buildBarricade();
-  else if (e.code === 'KeyB' && state === 'play' && (nearHome || nearShopTown)) { state = 'shop'; }
+  else if (e.code === 'KeyB' && state === 'play' && nearShopTown) { state = 'shop'; }
   else if (e.code === 'KeyB' && state === 'play' && nearMerc) { state = 'merc'; }
   else if ((e.code === 'KeyB' || e.code === 'Escape') && state === 'merc') { state = 'play'; }
   else if ((e.code === 'KeyB' || e.code === 'Escape') && state === 'shop') { state = 'play'; }
@@ -810,7 +810,7 @@ canvas.addEventListener('touchstart', e => {
     if (state === 'merc') { let hit = false; for (let i = 0; i < ANIMALS.length; i++) { const r = mercRowRect(i); if (x >= r.x && x <= r.x + r.w && y >= r.y && y <= r.y + r.h) { buyPet(i); hit = true; break; } } if (!hit) state = 'play'; continue; }
     if (inBtn(btnPause, x, y)) { if (state === 'play') { state = 'paused'; AUDIO.stopMusic(); } else if (state === 'paused') { state = 'play'; AUDIO.startMusic(); } continue; }
     if (state !== 'play') continue;
-    if ((nearHome || nearShopTown) && inBtn(btnShop, x, y)) { state = 'shop'; continue; }
+    if (nearShopTown && inBtn(btnShop, x, y)) { state = 'shop'; continue; }
     if (nearMerc && inBtn(btnShop, x, y)) { state = 'merc'; continue; }
     if ((nearVehicle || driving) && inBtn(btnCar, x, y)) { if (driving) exitCar(); else enterCar(nearVehicle); continue; }
     if (!driving && inBtn(btnBuild, x, y)) { buildBarricade(); continue; }
@@ -1418,7 +1418,7 @@ function draw() {
     else if (sideQuest.kind === 'bounty' && sideQuest.target && !sideQuest.target.dead) drawPointer(sideQuest.target.x + 13, sideQuest.target.y, '🎯 ЦІЛЬ', '#ff5a4a');
   }
   drawHUD(); drawQuests(); drawSideQuest(); drawWeaponBar(); drawSpeech(); drawMinimap(); drawPetsHUD();
-  if (state === 'play' && (nearHome || nearShopTown || nearMerc)) drawShopPrompt();
+  if (state === 'play' && (nearShopTown || nearMerc)) drawShopPrompt();
   if (state === 'play' && (nearVehicle || driving)) drawCarPrompt();
   if (state === 'play' && IS_TOUCH && !driving) drawBuildPrompt();
   if (state === 'shop') drawShop();
@@ -1714,7 +1714,7 @@ function drawShopPrompt() {
   ctx.fillStyle = 'rgba(20,40,28,.85)'; rr(btnShop.x, btnShop.y, btnShop.w, btnShop.h, 10); ctx.fill();
   ctx.strokeStyle = '#ffd23f'; ctx.lineWidth = 2; rr(btnShop.x, btnShop.y, btnShop.w, btnShop.h, 10); ctx.stroke();
   ctx.fillStyle = '#ffe08a'; ctx.font = 'bold 15px Trebuchet MS,sans-serif'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
-  const label = (nearHome || nearShopTown) ? '🛒 Магазин' : '🐾 Найманці';
+  const label = nearShopTown ? '🛒 Магазин' : '🐾 Найманці';
   ctx.fillText(label + (IS_TOUCH ? '' : ' (B)'), btnShop.x + btnShop.w / 2, btnShop.y + btnShop.h / 2);
   ctx.textAlign = 'left'; ctx.textBaseline = 'alphabetic';
 }
