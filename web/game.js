@@ -123,7 +123,8 @@ let captiveMale = false;     // the rescued captive is a man (when the hero is t
 let abilCD = 0, flipT = 0, invShield = 0; const flipDir = { x: 1, y: 0 };
 const ABIL_CD = 12, FLIP_DUR = 0.42, FLIP_SPEED = 880, MALE_INV = 5;
 // ---- costumes (skins): fully distinct outfits, drawn procedurally ----
-const SKINS = [
+// MALE outfits (jackets/uniforms/armor)
+const SKINS_M = [
   { name: 'Класика', cost: 0, base: true },
   { name: 'Солдат', cost: 14, spec: { skin: '#caa688', body: ['#5a6340', '#454d30'], arms: '#4d5436', legs: '#3a4028', accent: '#2e3320', deco: 'pockets', head: { type: 'helmet', col: '#4a5236' } } },
   { name: 'Хазмат', cost: 18, spec: { skin: '#e6df5a', body: ['#ecd83e', '#cdb822'], arms: '#e0ca34', legs: '#cdb822', accent: '#9a8a18', deco: 'onepiece', head: { type: 'hazmat', col: '#ecd83e', visor: '#33454f' } } },
@@ -132,49 +133,82 @@ const SKINS = [
   { name: 'Робітник', cost: 16, spec: { skin: '#caa688', body: ['#e0731f', '#c25e12'], arms: '#caa688', legs: '#33415a', accent: '#ffd23f', deco: 'hivis', head: { type: 'hardhat', col: '#f3a712' } } },
   { name: 'Кібер', cost: 24, spec: { skin: '#b8a48c', body: ['#2a2f45', '#1b2030'], arms: '#242a3e', legs: '#1b2030', accent: '#34e0e0', deco: 'neon', head: { type: 'cyber', col: '#2a2f45', visor: '#34e0e0' } } },
 ];
+// FEMALE outfits (gowns + headwear)
+const SKINS_F = [
+  { name: 'Класика', cost: 0, base: true },
+  { name: 'Багряна', cost: 16, spec: { skin: '#e8c4a0', hair: '#46301e', body: ['#d6314f', '#9e1f34'], accent: '#ffd23f', dress: 'long', sleeve: '#d6314f', head: { type: 'tiara', col: '#ffe08a' } } },
+  { name: 'Смарагдова', cost: 16, spec: { skin: '#e8c4a0', hair: '#2c1c12', body: ['#2e9e5b', '#1d7040'], accent: '#ffe08a', dress: 'long', head: { type: 'flower', flower: '#ff8fc0' } } },
+  { name: 'Королева', cost: 32, spec: { skin: '#e8c4a0', hair: '#caa14a', body: ['#8e44ad', '#682f80'], accent: '#ffd23f', dress: 'ball', sleeve: '#8e44ad', head: { type: 'crown' } } },
+  { name: 'Відьма', cost: 22, spec: { skin: '#d8d8e4', hair: '#15131e', body: ['#2a2238', '#151022'], accent: '#7b5cff', dress: 'long', head: { type: 'witchhat', accent: '#7b5cff' } } },
+  { name: 'Снігова', cost: 24, spec: { skin: '#ecd6c0', hair: '#e6e6f2', body: ['#d4e9ff', '#9cc2e6'], accent: '#ffffff', dress: 'ball', head: { type: 'veil' } } },
+  { name: 'Неонова', cost: 26, spec: { skin: '#dcc4ac', hair: '#34e0e0', body: ['#3a2150', '#1f1230'], accent: '#34e0e0', dress: 'long', head: { type: 'tiara', col: '#34e0e0' } } },
+];
 function costumeCanvas(spec, step, female) {
   const c = document.createElement('canvas'); c.width = 24; c.height = 32; const x = c.getContext('2d');
   const RR = (X, Y, W, H, r) => { x.beginPath(); x.moveTo(X + r, Y); x.arcTo(X + W, Y, X + W, Y + H, r); x.arcTo(X + W, Y + H, X, Y + H, r); x.arcTo(X, Y + H, X, Y, r); x.arcTo(X, Y, X + W, Y, r); x.closePath(); };
   const eyes = col => { x.fillStyle = col || '#1a1410'; x.beginPath(); x.arc(9.5, 8, 1.6, 0, 7); x.arc(14.5, 8, 1.6, 0, 7); x.fill(); };
-  const l = step === 1 ? 2 : 0, r2 = step === 2 ? 2 : 0;
+  const l = step === 1 ? 2 : 0, r2 = step === 2 ? 2 : 0, sway = step === 1 ? -1.4 : step === 2 ? 1.4 : 0;
   x.fillStyle = 'rgba(0,0,0,.28)'; x.beginPath(); x.ellipse(12, 30, 9, 3.6, 0, 0, 7); x.fill();
-  x.fillStyle = spec.legs; RR(7, 22, 4, 8 - l, 2); x.fill(); RR(13, 22, 4, 8 - r2, 2); x.fill();
-  const g = x.createLinearGradient(0, 12, 0, 25); g.addColorStop(0, spec.body[0]); g.addColorStop(1, spec.body[1]); x.fillStyle = g;
-  if (female) { RR(5, 12, 14, 11, 5); x.fill(); x.beginPath(); x.moveTo(4, 26); x.lineTo(7, 21); x.lineTo(17, 21); x.lineTo(20, 26); x.closePath(); x.fill(); }   // skirt
-  else { RR(4, 12, 16, 13, 5); x.fill(); }
-  x.fillStyle = spec.accent; RR(female ? 5 : 4, 12, female ? 14 : 16, 2, 2); x.fill();
-  x.fillStyle = spec.arms; RR(2, 14, 4, 8, 3); x.fill(); RR(18, 14, 4, 8, 3); x.fill();
-  if (spec.deco === 'pockets') { x.fillStyle = spec.accent; x.fillRect(7, 18, 3, 3); x.fillRect(14, 18, 3, 3); }
-  else if (spec.deco === 'plates') { x.strokeStyle = 'rgba(255,255,255,.55)'; x.lineWidth = 1; x.beginPath(); x.moveTo(6, 16); x.lineTo(18, 16); x.moveTo(6, 20); x.lineTo(18, 20); x.stroke(); }
-  else if (spec.deco === 'hivis') { x.fillStyle = spec.accent; x.fillRect(5, 15, 14, 2); x.fillRect(5, 20, 14, 2); }
-  else if (spec.deco === 'belt') { x.fillStyle = spec.accent; x.fillRect(5, 21, 14, 2); }
-  else if (spec.deco === 'neon') { x.strokeStyle = spec.head.visor; x.lineWidth = 1.2; x.beginPath(); x.moveTo(12, 13); x.lineTo(12, 24); x.moveTo(6, 17); x.lineTo(18, 17); x.stroke(); }
-  // head / headgear
-  const ht = spec.head.type;
-  if (ht === 'helmet') { x.fillStyle = spec.skin; x.beginPath(); x.arc(12, 8, 7, 0, 7); x.fill(); eyes(); x.fillStyle = spec.head.col; x.beginPath(); x.arc(12, 7, 7.4, Math.PI, 0); x.fill(); x.fillRect(5, 6, 14, 2); }
+  if (female && spec.dress) {
+    const flare = spec.dress === 'ball' ? 8.5 : 5.5;
+    x.fillStyle = spec.shoe || '#2a2630'; RR(8, 27, 3.2, 3, 1); x.fill(); RR(12.8, 27, 3.2, 3, 1); x.fill();   // shoes
+    const g = x.createLinearGradient(0, 15, 0, 29); g.addColorStop(0, spec.body[0]); g.addColorStop(1, spec.body[1]); x.fillStyle = g;
+    x.beginPath(); x.moveTo(8, 15); x.lineTo(16, 15); x.lineTo(16 + flare + sway, 29); x.lineTo(8 - flare + sway, 29); x.closePath(); x.fill();   // flared skirt
+    x.fillStyle = spec.accent; x.beginPath(); x.moveTo(8 - flare + sway, 29); x.lineTo(16 + flare + sway, 29); x.lineTo(15.6 + flare + sway, 27.6); x.lineTo(8.4 - flare + sway, 27.6); x.closePath(); x.fill();   // hem
+    x.strokeStyle = 'rgba(0,0,0,.10)'; x.lineWidth = 1; x.beginPath(); x.moveTo(12, 16); x.lineTo(12 + sway, 28); x.moveTo(10, 16); x.lineTo(10 - flare * 0.5 + sway, 28); x.moveTo(14, 16); x.lineTo(14 + flare * 0.5 + sway, 28); x.stroke();
+    x.fillStyle = spec.body[0]; RR(7, 11, 10, 6, 3); x.fill();                                  // bodice
+    x.fillStyle = spec.accent; x.fillRect(7, 15, 10, 1.6);                                       // sash
+    x.fillStyle = spec.sleeve || spec.skin; RR(4.6, 12, 2.6, 7, 2); x.fill(); RR(16.8, 12, 2.6, 7, 2); x.fill();   // arms
+    x.fillStyle = spec.accent; x.beginPath(); x.arc(12, 12, 0.9, 0, 7); x.fill();                // neckline gem
+  } else {
+    x.fillStyle = spec.legs; RR(7, 22, 4, 8 - l, 2); x.fill(); RR(13, 22, 4, 8 - r2, 2); x.fill();
+    const g = x.createLinearGradient(0, 12, 0, 25); g.addColorStop(0, spec.body[0]); g.addColorStop(1, spec.body[1]); x.fillStyle = g; RR(4, 12, 16, 13, 5); x.fill();
+    x.fillStyle = spec.accent; RR(4, 12, 16, 2, 2); x.fill();
+    x.fillStyle = spec.arms; RR(2, 14, 4, 8, 3); x.fill(); RR(18, 14, 4, 8, 3); x.fill();
+    if (spec.deco === 'pockets') { x.fillStyle = spec.accent; x.fillRect(7, 18, 3, 3); x.fillRect(14, 18, 3, 3); }
+    else if (spec.deco === 'plates') { x.strokeStyle = 'rgba(255,255,255,.55)'; x.lineWidth = 1; x.beginPath(); x.moveTo(6, 16); x.lineTo(18, 16); x.moveTo(6, 20); x.lineTo(18, 20); x.stroke(); }
+    else if (spec.deco === 'hivis') { x.fillStyle = spec.accent; x.fillRect(5, 15, 14, 2); x.fillRect(5, 20, 14, 2); }
+    else if (spec.deco === 'belt') { x.fillStyle = spec.accent; x.fillRect(5, 21, 14, 2); }
+    else if (spec.deco === 'neon') { x.strokeStyle = spec.head.visor; x.lineWidth = 1.2; x.beginPath(); x.moveTo(12, 13); x.lineTo(12, 24); x.moveTo(6, 17); x.lineTo(18, 17); x.stroke(); }
+  }
+  // ---- head / headgear ----
+  const ht = spec.head.type, hair = spec.hair || '#3a2a1c';
+  const skinHead = () => { x.fillStyle = spec.skin; x.beginPath(); x.arc(12, 8, 7, 0, 7); x.fill(); };
+  const longHair = () => { x.fillStyle = hair; x.beginPath(); x.arc(12, 7, 7.7, Math.PI, 0); x.fill(); x.fillRect(4.3, 6, 2.7, 12); x.fillRect(17, 6, 2.7, 12); };
+  if (ht === 'helmet') { skinHead(); eyes(); x.fillStyle = spec.head.col; x.beginPath(); x.arc(12, 7, 7.4, Math.PI, 0); x.fill(); x.fillRect(5, 6, 14, 2); }
   else if (ht === 'hazmat') { x.fillStyle = spec.head.col; x.beginPath(); x.arc(12, 8, 7.6, 0, 7); x.fill(); x.fillStyle = spec.head.visor; RR(8, 4.5, 8, 6, 2); x.fill(); x.fillStyle = '#555'; x.beginPath(); x.arc(12, 12, 2, 0, 7); x.fill(); }
   else if (ht === 'knight') { x.fillStyle = spec.head.col; x.beginPath(); x.arc(12, 8, 7.4, 0, 7); x.fill(); x.fillStyle = '#2a2e33'; x.fillRect(11, 3.5, 2, 9); x.strokeStyle = '#e3e8ee'; x.lineWidth = 1; x.beginPath(); x.arc(12, 8, 7.4, 0, 7); x.stroke(); }
   else if (ht === 'ninja') { x.fillStyle = spec.head.col; x.beginPath(); x.arc(12, 8, 7.4, 0, 7); x.fill(); x.fillStyle = spec.skin; x.fillRect(5.5, 6.6, 13, 2.6); eyes('#1a1410'); x.fillStyle = spec.head.col; x.fillRect(5.5, 9.2, 13, 1.2); }
-  else if (ht === 'hardhat') { x.fillStyle = spec.skin; x.beginPath(); x.arc(12, 8, 7, 0, 7); x.fill(); eyes(); x.fillStyle = spec.head.col; x.beginPath(); x.arc(12, 6, 6.6, Math.PI, 0); x.fill(); x.fillRect(4, 5, 16, 2); x.fillRect(11, 1, 2, 5); }
-  else if (ht === 'cyber') { x.fillStyle = spec.skin; x.beginPath(); x.arc(12, 8, 7, 0, 7); x.fill(); x.fillStyle = '#2a2e33'; x.beginPath(); x.arc(12, 6, 7, Math.PI, 0); x.fill(); x.fillStyle = spec.head.visor; RR(6, 6.5, 12, 3.4, 1.5); x.fill(); x.fillStyle = '#fff'; x.globalAlpha = .6; x.fillRect(7, 7.2, 3, 1.4); x.globalAlpha = 1; }
+  else if (ht === 'hardhat') { skinHead(); eyes(); x.fillStyle = spec.head.col; x.beginPath(); x.arc(12, 6, 6.6, Math.PI, 0); x.fill(); x.fillRect(4, 5, 16, 2); x.fillRect(11, 1, 2, 5); }
+  else if (ht === 'cyber') { skinHead(); x.fillStyle = '#2a2e33'; x.beginPath(); x.arc(12, 6, 7, Math.PI, 0); x.fill(); x.fillStyle = spec.head.visor; RR(6, 6.5, 12, 3.4, 1.5); x.fill(); x.fillStyle = '#fff'; x.globalAlpha = .6; x.fillRect(7, 7.2, 3, 1.4); x.globalAlpha = 1; }
+  else if (ht === 'crown') { longHair(); skinHead(); eyes(); x.fillStyle = '#ffd23f'; x.beginPath(); x.moveTo(6.5, 4); x.lineTo(8, 0.5); x.lineTo(9.8, 4); x.lineTo(12, 0); x.lineTo(14.2, 4); x.lineTo(16, 0.5); x.lineTo(17.5, 4); x.closePath(); x.fill(); x.fillStyle = '#c0392b'; x.beginPath(); x.arc(12, 2.4, 1, 0, 7); x.fill(); }
+  else if (ht === 'tiara') { longHair(); skinHead(); eyes(); x.fillStyle = spec.head.col || '#ffe08a'; x.fillRect(7, 3.4, 10, 1.5); x.beginPath(); x.arc(12, 3.2, 1.4, Math.PI, 0); x.fill(); }
+  else if (ht === 'flower') { longHair(); skinHead(); eyes(); const fl = spec.head.flower || '#ff8fc0'; x.fillStyle = fl; for (let k = 0; k < 5; k++) { const a = k / 5 * 6.283; x.beginPath(); x.arc(6 + Math.cos(a) * 2, 4 + Math.sin(a) * 2, 1.4, 0, 7); x.fill(); } x.fillStyle = '#ffe08a'; x.beginPath(); x.arc(6, 4, 1, 0, 7); x.fill(); }
+  else if (ht === 'witchhat') { longHair(); skinHead(); eyes(); x.fillStyle = '#17131f'; x.beginPath(); x.moveTo(12, -6.5); x.lineTo(7.5, 3.5); x.lineTo(16.5, 3.5); x.closePath(); x.fill(); x.fillRect(4, 3.2, 16, 2); x.fillStyle = spec.head.accent || '#7b5cff'; x.fillRect(8, 1.8, 6, 1.4); }
+  else if (ht === 'veil') { x.fillStyle = 'rgba(240,244,255,.78)'; x.beginPath(); x.moveTo(4.5, 4); x.quadraticCurveTo(12, -1.5, 19.5, 4); x.lineTo(20, 17); x.lineTo(4, 17); x.closePath(); x.fill(); skinHead(); eyes(); x.fillStyle = '#ffe08a'; x.fillRect(7.5, 3.6, 9, 1.3); }
+  else { skinHead(); eyes(); if (female) longHair(); else { x.fillStyle = hair; x.beginPath(); x.arc(12, 6, 7, Math.PI, 0); x.fill(); } }
   return c;
 }
 const buildSkin = (spec, female) => [0, 1, 2].map(s => costumeCanvas(spec, s, female));
-const skinPlayer = SKINS.map(s => s.base ? IMG.player : buildSkin(s.spec, false));
-const skinWoman = SKINS.map(s => s.base ? IMG.woman : buildSkin(s.spec, true));
-const skinSet = (h, idx) => (h === 'female' ? skinWoman : skinPlayer)[idx] || (h === 'female' ? IMG.woman : IMG.player);
-let ownedSkins, curSkin;
-try { ownedSkins = new Set(JSON.parse(localStorage.getItem('punk_skins') || '[0]')); } catch (e) { ownedSkins = new Set([0]); }
-try { curSkin = +(localStorage.getItem('punk_skin') || 0) || 0; } catch (e) { curSkin = 0; }
-if (!ownedSkins.has(curSkin)) curSkin = 0;
-function saveSkins() { try { localStorage.setItem('punk_skins', JSON.stringify([...ownedSkins])); localStorage.setItem('punk_skin', curSkin); } catch (e) {} }
+const skinFramesM = SKINS_M.map(s => s.base ? IMG.player : buildSkin(s.spec, false));
+const skinFramesF = SKINS_F.map(s => s.base ? IMG.woman : buildSkin(s.spec, true));
+const skinSet = (h, idx) => (h === 'female' ? skinFramesF : skinFramesM)[idx] || (h === 'female' ? IMG.woman : IMG.player);
+const loadSkinSet = k => { try { return new Set(JSON.parse(localStorage.getItem(k) || '[0]')); } catch (e) { return new Set([0]); } };
+const loadCur = k => { try { return +(localStorage.getItem(k) || 0) || 0; } catch (e) { return 0; } };
+let ownedM = loadSkinSet('punk_skins_m'), ownedF = loadSkinSet('punk_skins_f'), curM = loadCur('punk_skin_m'), curF = loadCur('punk_skin_f');
+if (!ownedM.has(curM)) curM = 0; if (!ownedF.has(curF)) curF = 0;
+const activeSkins = () => hero === 'female' ? SKINS_F : SKINS_M;
+const ownedSet = () => hero === 'female' ? ownedF : ownedM;
+const curSkinVal = () => hero === 'female' ? curF : curM;
+function saveSkins() { try { localStorage.setItem('punk_skins_m', JSON.stringify([...ownedM])); localStorage.setItem('punk_skins_f', JSON.stringify([...ownedF])); localStorage.setItem('punk_skin_m', curM); localStorage.setItem('punk_skin_f', curF); } catch (e) {} }
 function buyOrEquipSkin(i) {
-  const s = SKINS[i]; if (!s) return;
-  if (ownedSkins.has(i)) { curSkin = i; saveSkins(); AUDIO.sfx.pickup(); showToast('Вдягнено: ' + s.name); }
-  else if (totalCoins >= s.cost) { totalCoins -= s.cost; ownedSkins.add(i); curSkin = i; saveSkins(); AUDIO.sfx.win(); showToast('Куплено костюм: ' + s.name); }
+  const set = activeSkins(), s = set[i]; if (!s) return; const own = ownedSet();
+  const equip = () => { if (hero === 'female') curF = i; else curM = i; };
+  if (own.has(i)) { equip(); saveSkins(); AUDIO.sfx.pickup(); showToast('Вдягнено: ' + s.name); }
+  else if (totalCoins >= s.cost) { totalCoins -= s.cost; own.add(i); equip(); saveSkins(); AUDIO.sfx.win(); showToast('Куплено костюм: ' + s.name); }
   else { AUDIO.sfx.hurt(); showToast('Замало монет (' + s.cost + ')'); }
 }
-const heroImg = () => skinSet(hero, curSkin);
+const heroImg = () => skinSet(hero, curSkinVal());
 function useAbility() {
   if (state !== 'play' || abilCD > 0) return;
   if (hero === 'female') {
@@ -444,7 +478,7 @@ addEventListener('keydown', e => {
 addEventListener('keyup', e => { keys[e.code] = false; });
 const mouse = { x: VIEW_W / 2, y: VIEW_H / 2, down: false, moved: false };
 canvas.addEventListener('mousemove', e => { const r = canvas.getBoundingClientRect(); mouse.x = e.clientX - r.left; mouse.y = e.clientY - r.top; mouse.moved = true; });
-canvas.addEventListener('mousedown', () => { canvas.focus(); if (state === 'title') { startGame(); return; } if (state === 'shop') { for (let i = 0; i < SHOP.length; i++) { const r = shopRowRect(i); if (mouse.x >= r.x && mouse.x <= r.x + r.w && mouse.y >= r.y && mouse.y <= r.y + r.h) { buyItem(i); return; } } const sb = skinsBtnRect(); if (mouse.x >= sb.x && mouse.x <= sb.x + sb.w && mouse.y >= sb.y && mouse.y <= sb.y + sb.h) state = 'skins'; return; } if (state === 'skins') { for (let i = 0; i < SKINS.length; i++) { const r = skinRect(i); if (mouse.x >= r.x && mouse.x <= r.x + r.w && mouse.y >= r.y && mouse.y <= r.y + r.h) { buyOrEquipSkin(i); return; } } state = 'shop'; return; } if (state !== 'play') return; if (inAbil(mouse.x, mouse.y)) { useAbility(); return; } if (inQuestPanel(mouse.x, mouse.y)) { questsCollapsed = !questsCollapsed; return; } const wi = weaponSlotAt(mouse.x, mouse.y); if (wi >= 0) { if (owned[wi]) curW = wi; return; } mouse.down = true; });
+canvas.addEventListener('mousedown', () => { canvas.focus(); if (state === 'title') { startGame(); return; } if (state === 'shop') { for (let i = 0; i < SHOP.length; i++) { const r = shopRowRect(i); if (mouse.x >= r.x && mouse.x <= r.x + r.w && mouse.y >= r.y && mouse.y <= r.y + r.h) { buyItem(i); return; } } const sb = skinsBtnRect(); if (mouse.x >= sb.x && mouse.x <= sb.x + sb.w && mouse.y >= sb.y && mouse.y <= sb.y + sb.h) state = 'skins'; return; } if (state === 'skins') { for (let i = 0; i < activeSkins().length; i++) { const r = skinRect(i); if (mouse.x >= r.x && mouse.x <= r.x + r.w && mouse.y >= r.y && mouse.y <= r.y + r.h) { buyOrEquipSkin(i); return; } } state = 'shop'; return; } if (state !== 'play') return; if (inAbil(mouse.x, mouse.y)) { useAbility(); return; } if (inQuestPanel(mouse.x, mouse.y)) { questsCollapsed = !questsCollapsed; return; } const wi = weaponSlotAt(mouse.x, mouse.y); if (wi >= 0) { if (owned[wi]) curW = wi; return; } mouse.down = true; });
 
 // hero picker on the title screen
 { const btns = document.querySelectorAll('#heroPick .hero');
@@ -519,7 +553,7 @@ function buildSnapshot() {
   }
   return {
     t: 'snap', nf: +nightF.toFixed(3),
-    p1: { x: Math.round(player.x), y: Math.round(player.y), fx: +face.x.toFixed(2), fy: +face.y.toFixed(2), fr: player.frame, h: Math.round(health), dr: driving ? 1 : 0, ca: driving ? +Math.atan2(face.y, face.x).toFixed(2) : 0, vx: Math.round(player.vx || 0), vy: Math.round(player.vy || 0), hero: hero, skin: curSkin, shield: invShield > 0 ? 1 : 0 },
+    p1: { x: Math.round(player.x), y: Math.round(player.y), fx: +face.x.toFixed(2), fy: +face.y.toFixed(2), fr: player.frame, h: Math.round(health), dr: driving ? 1 : 0, ca: driving ? +Math.atan2(face.y, face.x).toFixed(2) : 0, vx: Math.round(player.vx || 0), vy: Math.round(player.vy || 0), hero: hero, skin: curSkinVal(), shield: invShield > 0 ? 1 : 0 },
     cm: captiveMale ? 1 : 0,
     mh: player2 ? Math.round(player2.health) : 100,
     cn: totalCoins, ct: coinsTotal, kl: kills, sc: score, di: district,
@@ -661,7 +695,7 @@ function updateClient(dt) {
     NET.send({ t: 'in', x: Math.round(player.x), y: Math.round(player.y), fx: +face.x.toFixed(2), fy: +face.y.toFixed(2), fr: player.frame,
       fire: sendFire, ax: +ax.toFixed(2), ay: +ay.toFixed(2),
       dmg: Math.round(w.dmg * dmgMul), rate: w.rate, spd: w.speed || 620, col: w.color, pel: w.pellets || 1, spr: w.spread || 0, melee: w.type === 'melee',
-      dr: driving ? 1 : 0, ca: driving ? +Math.atan2(face.y, face.x).toFixed(2) : 0, hero: hero, skin: curSkin });
+      dr: driving ? 1 : 0, ca: driving ? +Math.atan2(face.y, face.x).toFixed(2) : 0, hero: hero, skin: curSkinVal() });
   }
   cam.x = clamp(player.x + player.w / 2 - VIEW_W / 2, 0, LW - VIEW_W);
   cam.y = clamp(player.y + player.h / 2 - VIEW_H / 2, 0, LH - VIEW_H);
@@ -708,7 +742,7 @@ canvas.addEventListener('touchstart', e => {
     if (state === 'title') { startGame(); return; }
     if (state === 'win' || state === 'gameover') { location.reload(); return; }
     if (state === 'shop') { let hit = false; for (let i = 0; i < SHOP.length; i++) { const r = shopRowRect(i); if (x >= r.x && x <= r.x + r.w && y >= r.y && y <= r.y + r.h) { buyItem(i); hit = true; break; } } if (!hit) { const sb = skinsBtnRect(); if (x >= sb.x && x <= sb.x + sb.w && y >= sb.y && y <= sb.y + sb.h) { state = 'skins'; hit = true; } } if (!hit) state = 'play'; continue; }
-    if (state === 'skins') { let hit = false; for (let i = 0; i < SKINS.length; i++) { const r = skinRect(i); if (x >= r.x && x <= r.x + r.w && y >= r.y && y <= r.y + r.h) { buyOrEquipSkin(i); hit = true; break; } } if (!hit) state = 'shop'; continue; }
+    if (state === 'skins') { let hit = false; for (let i = 0; i < activeSkins().length; i++) { const r = skinRect(i); if (x >= r.x && x <= r.x + r.w && y >= r.y && y <= r.y + r.h) { buyOrEquipSkin(i); hit = true; break; } } if (!hit) state = 'shop'; continue; }
     if (inBtn(btnPause, x, y)) { if (state === 'play') { state = 'paused'; AUDIO.stopMusic(); } else if (state === 'paused') { state = 'play'; AUDIO.startMusic(); } continue; }
     if (state !== 'play') continue;
     if ((nearHome || nearShopTown) && inBtn(btnShop, x, y)) { state = 'shop'; continue; }
@@ -1593,8 +1627,9 @@ function drawSkins() {
   ctx.textAlign = 'center'; ctx.textBaseline = 'alphabetic';
   ctx.fillStyle = '#c9b6ff'; ctx.font = 'bold 24px Trebuchet MS,sans-serif'; ctx.fillText('👕 КОСТЮМИ — ' + (hero === 'female' ? 'Жінка' : 'Чоловік'), VIEW_W / 2, py + 34);
   ctx.fillStyle = '#fff'; ctx.font = 'bold 15px Trebuchet MS,sans-serif'; ctx.fillText('💲 Монет: ' + totalCoins, VIEW_W / 2, py + 56);
-  for (let i = 0; i < SKINS.length; i++) {
-    const r = skinRect(i), s = SKINS[i], own = ownedSkins.has(i), eq = curSkin === i;
+  const SET = activeSkins();
+  for (let i = 0; i < SET.length; i++) {
+    const r = skinRect(i), s = SET[i], own = ownedSet().has(i), eq = curSkinVal() === i;
     ctx.fillStyle = eq ? 'rgba(255,210,63,0.22)' : 'rgba(40,52,36,0.7)'; rr(r.x, r.y, r.w, r.h, 10); ctx.fill();
     ctx.strokeStyle = eq ? '#ffd23f' : 'rgba(0,0,0,0.4)'; ctx.lineWidth = 2; rr(r.x, r.y, r.w, r.h, 10); ctx.stroke();
     const fr = skinSet(hero, i)[0]; ctx.drawImage(fr, r.x + r.w / 2 - 22, r.y + 12, 44, 58);
